@@ -52,10 +52,18 @@ $ROADEYE export --db "$OUT/demo.db" --geojson "$OUT/demo.geojson" --csv "$OUT/de
 
 rule "Done"
 cat <<EOF
-Output is in ./$OUT/
+>>> TO SEE THE DEFECTS ON A MAP, RUN THIS NOW:
 
-  demo.geojson   open at https://geojson.io to see the defects on a real map
-                 (they should trace an 800m x 400m rectangle in central Yerevan)
+        python3 scripts/view_map.py
+
+    Then click "Open in Browser" when the popup appears. (In a Codespace you can
+    also open the PORTS tab beside the terminal and click the globe on port 8000.)
+
+Everything else is in ./$OUT/ — note this folder is git-ignored, so VS Code greys
+it out or hides it in the file explorer. That is normal; the files are there.
+
+  index.html     the map page (served by the command above)
+  demo.geojson   raw defect data — also opens at https://geojson.io
   demo.csv       the same data as a spreadsheet
   demo.db        SQLite database, inspect with:
                    sqlite3 $OUT/demo.db "SELECT defect_id, damage_class, confidence, uncertainty_m, status FROM defects LIMIT 5;"
