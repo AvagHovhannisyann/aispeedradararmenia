@@ -21,20 +21,24 @@ from roadeye.ingest.bundle import BUNDLE_SCHEMA_VERSION, load_bundle
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = REPO_ROOT / "apps" / "collector"
+#: The bundle contract lives in bundle.ts, which is deliberately free of expo imports
+#: so it can be tested by `node --test` with no install. survey.ts is the filesystem
+#: half and holds no field definitions.
+BUNDLE_TS = COLLECTOR / "src" / "bundle.ts"
 SURVEY_TS = COLLECTOR / "src" / "survey.ts"
 APP_TSX = COLLECTOR / "App.tsx"
 
 pytestmark = pytest.mark.skipif(
-    not SURVEY_TS.exists(), reason="collector app not present in this checkout"
+    not BUNDLE_TS.exists(), reason="collector app not present in this checkout"
 )
 
 
 class TestSchemaVersionAgreement:
     def test_typescript_and_python_agree(self):
         """A version mismatch means the processor silently misreads real surveys."""
-        source = SURVEY_TS.read_text(encoding="utf-8")
+        source = BUNDLE_TS.read_text(encoding="utf-8")
         match = re.search(r"BUNDLE_SCHEMA_VERSION\s*=\s*(\d+)", source)
-        assert match, "BUNDLE_SCHEMA_VERSION not found in apps/collector/src/survey.ts"
+        assert match, "BUNDLE_SCHEMA_VERSION not found in apps/collector/src/bundle.ts"
         assert int(match.group(1)) == BUNDLE_SCHEMA_VERSION, (
             f"collector writes schema_version {match.group(1)} but the processor "
             f"expects {BUNDLE_SCHEMA_VERSION}"
@@ -49,22 +53,25 @@ class TestFieldNameAgreement:
         ["route_id", "started_at", "recording_start_epoch_ms", "schema_version"],
     )
     def test_route_fields_present(self, field: str):
-        assert field in SURVEY_TS.read_text(encoding="utf-8"), (
+        assert field in BUNDLE_TS.read_text(encoding="utf-8"), (
             f"collector no longer writes route field '{field}'"
         )
 
     @pytest.mark.parametrize("field", ["accuracy_m", "speed_mps", "heading_deg"])
     def test_location_fields_present(self, field: str):
-        assert field in SURVEY_TS.read_text(encoding="utf-8"), (
+        assert field in BUNDLE_TS.read_text(encoding="utf-8"), (
             f"collector no longer writes location field '{field}'"
         )
 
     def test_location_uses_short_time_key(self):
         """Locations use 't', not 'timestamp' — matches _parse_location()."""
-        assert re.search(r"\bt:\s*number", SURVEY_TS.read_text(encoding="utf-8"))
+        assert re.search(r"\bt:\s*number", BUNDLE_TS.read_text(encoding="utf-8"))
 
     def test_filenames_match(self):
-        source = SURVEY_TS.read_text(encoding="utf-8")
+        """Checked across both modules: bundle.ts names the files a manifest lists,
+        survey.ts names the paths written. Splitting the pure half out moved some of
+        these; the contract is their union."""
+        source = BUNDLE_TS.read_text(encoding="utf-8") + SURVEY_TS.read_text(encoding="utf-8")
         for filename in ("route.json", "locations.jsonl", "manifest.json", "video.mp4"):
             assert filename in source, f"collector no longer writes {filename}"
 
@@ -89,6 +96,74 @@ class TestTimeAnchorHandling:
         source = APP_TSX.read_text(encoding="utf-8")
         assert not re.search(r"recording_start_epoch_ms:\s*Math\.round\(\s*startedAtRef", source), (
             "recording_start_epoch_ms must not be recomputed from startedAt"
+        )
+
+
+class TestTheDriveCannotBeSilentlyLost:
+    """Regressions for three bugs that would each have cost a whole survey.
+
+    The collector has never run on a device, so these are checked by reading the source
+    rather than by exercising it. That is weaker than a real test and much better than
+    nothing: each one pins a specific mistake that was actually present.
+    """
+
+    def test_stop_waits_for_the_video_before_finishing(self):
+        """``recordAsync()`` resolves only once the file is written. The first version
+        called ``stopRecording()`` and then immediately wrote the manifest and showed
+        "done" — so a user who closed the app there lost the entire drive, with a bundle
+        on disk claiming a video that was still in flight."""
+        source = APP_TSX.read_text(encoding="utf-8")
+        assert "recordingRef" in source, "the recording promise must be kept"
+        assert re.search(r"await\s+recordingRef\.current", source), (
+            "stop() must await the recording promise before writing the manifest"
+        )
+
+    def test_the_manifest_reports_whether_a_video_exists(self):
+        """Listing video.mp4 unconditionally makes the bundle lie about itself and sends
+        the processor looking for a file a failed recording never wrote."""
+        source = APP_TSX.read_text(encoding="utf-8")
+        assert "hasVideo" in source
+        assert not re.search(r"writeManifest\([^)]*'video\.mp4'", source, re.S), (
+            "the manifest must not hard-code video.mp4"
+        )
+
+    def test_appends_are_serialised(self):
+        """``appendLocations`` is read-modify-write, because expo-file-system has no
+        append. Two overlapping calls both read the same contents and the second write
+        discards the first's records — silently. Fixes flush on a timer and stop()
+        flushes again immediately, so overlap is easy to hit."""
+        source = SURVEY_TS.read_text(encoding="utf-8")
+        assert "appendQueues" in source, (
+            "appends must be chained per path so two flushes cannot interleave"
+        )
+
+
+class TestStorageIsCheckedInMinutesNotBytes:
+    """A fixed 2 GB floor bought roughly 17 minutes of 1080p video, while M1's own
+    acceptance criterion is a 30-minute survey. The phone would have filled partway
+    through and truncated the recording — discovered only after the drive."""
+
+    def test_the_floor_is_expressed_as_recordable_minutes(self):
+        source = BUNDLE_TS.read_text(encoding="utf-8")
+        assert "VIDEO_BYTES_PER_MINUTE" in source
+        assert "MIN_SURVEY_MINUTES" in source
+
+    def test_the_old_fixed_byte_floor_is_gone(self):
+        source = APP_TSX.read_text(encoding="utf-8")
+        assert "MIN_FREE_BYTES" not in source, (
+            "free space must be judged in recordable minutes, not a fixed byte count"
+        )
+
+
+class TestPermissionsCanBeRetried:
+    def test_the_grant_button_requests_location_too(self):
+        """The first version's only button re-requested the camera, so anyone who
+        declined location once was stuck on a screen whose button could not fix the
+        thing it was complaining about."""
+        source = APP_TSX.read_text(encoding="utf-8")
+        assert "requestLocation" in source
+        assert re.search(r"onPress=\{async \(\) => \{[^}]*requestLocation", source, re.S), (
+            "the permissions button must be able to re-request location"
         )
 
 
