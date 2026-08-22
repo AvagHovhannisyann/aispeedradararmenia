@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roadeye"
+version = "0.1.0"
+description = "Smartphone-based road inspection: survey ingest, defect detection, geolocation and municipal reporting."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+
+# Core dependencies are deliberately minimal. Everything needed to ingest a survey,
+# geolocate observations, deduplicate them into defects, store and export them runs
+# with just this. No GPU, no ffmpeg, no network. See docs/TECHNOLOGY_EVALUATION.md.
+dependencies = [
+    "pydantic>=2.5,<3",
+]
+
+[project.optional-dependencies]
+# Real video decoding. Kept optional because ffmpeg is absent on some target machines
+# and the pipeline must remain testable there.
+video = ["av>=12", "numpy>=1.26"]
+
+# Image-quality scoring beyond the no-op fallback.
+quality = ["numpy>=1.26"]
+
+# Baseline detector (M3). torchvision is BSD-3-Clause; see docs/LICENSE_AUDIT.md for
+# why Ultralytics is deliberately absent from this file and must stay absent.
+vision = ["torch>=2.2", "torchvision>=0.17", "numpy>=1.26"]
+
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.9",
+]
+
+[project.scripts]
+roadeye = "roadeye.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+    # Anything needing a GPU, real model weights, ffmpeg or the network. Excluded from
+    # the default run so `pytest` always passes on a bare laptop.
+    "slow: requires real models, video files or large datasets",
+    "requires_video: requires ffmpeg/PyAV and a real video file",
+    "requires_torch: requires torch/torchvision",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "C4"]
+ignore = [
+    "E501",  # line length is handled by the formatter
+    "B008",  # FastAPI's Depends() idiom relies on calls in defaults
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+files = ["src/roadeye"]

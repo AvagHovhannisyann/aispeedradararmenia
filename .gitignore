@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node
+node_modules/
+.expo/
+*.tsbuildinfo
+
+# RoadEye data — never commit survey evidence.
+# Raw road video may contain faces, plates and identifiable people (docs/PRIVACY.md),
+# and survey bundles are large. Both stay out of version control.
+surveys/
+data/
+*.db
+*.db-wal
+*.db-shm
+*.mp4
+*.mov
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+ml/experiments/*/predictions/
+exports/
+
+# OS
+.DS_Store
