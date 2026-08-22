@@ -38,7 +38,7 @@ Recorded as `ADR-001`.
 │  tracking         detections ──► tracks   (dedup layer 1)                │
 │  geolocation      video time ──► absolute time ──► interpolated position │
 │  clustering       tracks ──► defects      (dedup layer 2)                │
-│  map_matching     defect ──► road segment                     [M5]       │
+│  map_matching     defect ──► road segment (OSM, ODbL)                    │
 │  storage/db       SQLite + R*Tree                                        │
 │  reporting        CSV / GeoJSON with provenance                          │
 └───────────────────────────────────┬──────────────────────────────────────┘
@@ -61,8 +61,8 @@ pipeline.py · cli.py · services/api  ← orchestration
 
 **The domain layer imports no ML framework.** A `torch.Tensor` in a domain model is a
 bug. This is what makes the whole pipeline testable on a CPU-only machine with no
-weights, no ffmpeg and no network — 271 of the 333 tests need no optional dependency at
-all and run in ~2.4 s.
+weights, no ffmpeg and no network — 330 of the 392 tests need no optional dependency at
+all and run in ~2.5 s.
 
 ## The four seams
 

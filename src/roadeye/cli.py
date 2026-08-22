@@ -9,6 +9,8 @@ Commands
 ``process``   run the pipeline over a bundle and store the result
 ``detect``    run a detector over images and draw the boxes
 ``review``    launch the human-in-the-loop review UI
+``roads``     fetch or import an OpenStreetMap road network
+``match-roads``     assign stored defects to road segments
 ``export``    write defects to CSV / GeoJSON
 ``export-dataset``  turn reviewed defects into training data
 ``stats``     summarise what is in a database
@@ -25,14 +27,12 @@ from pathlib import Path
 from roadeye import __version__
 from roadeye.domain.enums import DamageClass, DefectStatus
 from roadeye.ingest.bundle import BundleError, load_bundle
+from roadeye.map_matching.matcher import MatchingConfig
+from roadeye.map_matching.osm import DEFAULT_OVERPASS_ENDPOINT
 from roadeye.pipeline import PipelineConfig, process_survey
 from roadeye.reporting.export import summarize, to_csv, to_geojson
 from roadeye.storage.db import Database
 from roadeye.vision.fake import FakeDetector
-
-#: Attribution required whenever an export leans on OpenStreetMap-derived geometry.
-#: See docs/LICENSE_AUDIT.md.
-OSM_ATTRIBUTION = "Road network data © OpenStreetMap contributors, ODbL."
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
@@ -306,10 +306,80 @@ def _cmd_export(args: argparse.Namespace) -> int:
         to_csv(defects, args.csv)
         print(f"wrote {args.csv} ({len(defects)} rows)")
     if args.geojson:
-        to_geojson(defects, args.geojson, attribution=OSM_ATTRIBUTION)
+        to_geojson(defects, args.geojson)
         print(f"wrote {args.geojson} ({len(defects)} features)")
     if not args.csv and not args.geojson:
         print(json.dumps(summarize(defects), indent=2))
+    return 0
+
+
+def _cmd_roads(args: argparse.Namespace) -> int:
+    """Fetch or import a road network for map matching."""
+    from roadeye.map_matching.osm import BBox, fetch_overpass, parse_osm_xml
+
+    if bool(args.bbox) == bool(args.osm_file):
+        print("give exactly one of --bbox or --osm-file", file=sys.stderr)
+        return 2
+
+    if args.osm_file:
+        bbox = BBox.parse(args.bbox) if args.bbox else None
+        network = parse_osm_xml(args.osm_file, bbox=bbox)
+    else:
+        bbox = BBox.parse(args.bbox)
+        print(f"fetching drivable roads for {bbox.overpass()} from {args.endpoint} ...")
+        try:
+            network = fetch_overpass(bbox, endpoint=args.endpoint)
+        except OSError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    if not len(network):
+        print(
+            "no drivable roads found — check the bbox order (min_lat,min_lon,max_lat,max_lon)",
+            file=sys.stderr,
+        )
+        return 1
+
+    out = network.save(args.output)
+    streets = network.named_streets()
+    print(f"wrote {out} — {len(network)} segments, {len(streets)} named streets")
+    for name, count in sorted(streets.items(), key=lambda kv: -kv[1])[:10]:
+        print(f"  {count:5d}  {name}")
+    print(f"\n{network.attribution} — this obligation travels with any export built on it.")
+    return 0
+
+
+def _cmd_match_roads(args: argparse.Namespace) -> int:
+    """Assign stored defects to road segments."""
+    from roadeye.map_matching.matcher import MatchingConfig, match_defects
+    from roadeye.map_matching.network import RoadNetwork
+
+    network = RoadNetwork.load(args.roads)
+    config = MatchingConfig(
+        max_distance_m=args.max_distance_m,
+        max_heading_delta_deg=args.max_heading_delta_deg,
+        ambiguity_margin_m=args.ambiguity_margin_m,
+        require_named=args.require_named,
+    )
+
+    with Database(args.db) as db:
+        defects = db.list_defects()
+        headings = db.representative_headings()
+        matched, stats = match_defects(defects, network, headings=headings, config=config)
+        if not args.dry_run:
+            db.upsert_defects(
+                [d for d, before in zip(matched, defects, strict=True) if d is not before]
+            )
+
+    total = len(defects)
+    print(f"{len(network)} road segments, {total} defects, {len(headings)} with a heading")
+    print(json.dumps(dict(sorted(stats.items())), indent=2))
+    if total:
+        print(
+            f"\nmatched {stats.get('matched', 0)}/{total} ({stats.get('matched', 0) / total:.0%})"
+        )
+    if args.dry_run:
+        print("\n--dry-run: nothing was written")
     return 0
 
 
@@ -423,6 +493,62 @@ def build_parser() -> argparse.ArgumentParser:
         help="omit rejected defects — they are hard negatives and usually worth keeping",
     )
     p.set_defaults(func=_cmd_export_dataset)
+
+    p = sub.add_parser(
+        "roads",
+        help="fetch or import an OpenStreetMap road network for map matching",
+    )
+    p.add_argument(
+        "--bbox",
+        help="min_lat,min_lon,max_lat,max_lon — fetch this area from Overpass",
+    )
+    p.add_argument(
+        "--osm-file",
+        help="import an .osm XML file instead of fetching (works with no network)",
+    )
+    p.add_argument("--output", required=True, help="road network file to write (.json[.gz])")
+    p.add_argument(
+        "--endpoint",
+        default=DEFAULT_OVERPASS_ENDPOINT,
+        help="Overpass instance (default: %(default)s)",
+    )
+    p.set_defaults(func=_cmd_roads)
+
+    p = sub.add_parser(
+        "match-roads",
+        help="assign stored defects to road segments",
+    )
+    p.add_argument("--db", required=True)
+    p.add_argument("--roads", required=True, help="road network file from 'roadeye roads'")
+    p.add_argument(
+        "--max-distance-m",
+        type=float,
+        default=MatchingConfig.max_distance_m,
+        help="never match a defect further than this from a centreline (default: %(default)s)",
+    )
+    p.add_argument(
+        "--max-heading-delta-deg",
+        type=float,
+        default=MatchingConfig.max_heading_delta_deg,
+        help="reject segments disagreeing with the vehicle heading by more (default: %(default)s)",
+    )
+    p.add_argument(
+        "--ambiguity-margin-m",
+        type=float,
+        default=MatchingConfig.ambiguity_margin_m,
+        help="refuse when two different streets score within this (default: %(default)s)",
+    )
+    p.add_argument(
+        "--require-named",
+        action="store_true",
+        help="match only to named streets",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="report what would change without writing to the database",
+    )
+    p.set_defaults(func=_cmd_match_roads)
 
     p = sub.add_parser("stats", help="summarise a database")
     p.add_argument("--db", required=True)

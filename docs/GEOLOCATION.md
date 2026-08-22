@@ -30,9 +30,17 @@ Each rung is a real improvement, and each is independently shippable. We are on 
 |---|---|---|---|
 | 0 | `PHONE_GPS` | 5-20 m + camera-to-defect offset | fallback only |
 | 1 | `INTERPOLATED_PHONE_GPS` | 5-15 m + offset | **implemented** |
-| 2 | `ROAD_SEGMENT_MATCHED` | as above, but on the correct street | M5 |
+| 2 | `ROAD_SEGMENT_MATCHED` | **no better** — but on the correct street | **implemented** (`docs/MAP_MATCHING.md`) |
 | 3 | `GROUND_PROJECTED` | 1-3 m (optimistic) | M6+ |
 | 4 | `MANUAL_CORRECTION` | as good as the reviewer | implemented (schema) |
+
+Rung 2 is worth spelling out, because it is the one that invites a false claim. Snapping
+a fix onto a road centreline does **not** reduce its error: the along-road position is
+still only as good as the GPS fix, and we do not know which lane or which side. What it
+buys is a *street name*, which is what makes a defect dispatchable. So a matched
+coordinate's `uncertainty_m` is never lower than it was, and grows to cover the distance
+the point was moved — otherwise the true position could fall outside our own stated
+circle.
 
 Deliberately, **rung 3 is not on the MVP path.** Building inverse-perspective geometry
 before a single real drive exists would be months of work against unmeasured error.

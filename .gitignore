@@ -33,6 +33,15 @@ models/**/*.onnx
 ml/experiments/*/predictions/
 exports/
 
+# Road geometry — OpenStreetMap is ODbL, and share-alike applies to *data*. An OSM
+# extract cached inside a proprietary repository is precisely the ambiguity L-3 in
+# docs/LICENSE_AUDIT.md exists to avoid, so networks are fetched at run time into
+# data/roads/ and never committed. Tests use invented geometry instead.
+data/roads/
+*.osm
+*.osm.pbf
+*.osm.bz2
+
 # OS
 .DS_Store
 

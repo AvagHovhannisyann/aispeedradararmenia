@@ -148,32 +148,71 @@ def cross_track_distance_m(point: LatLon, seg_start: LatLon, seg_end: LatLon) ->
     )
 
 
+class SegmentProjection(NamedTuple):
+    """Where a point lands when dropped onto a finite segment."""
+
+    #: Closest point on the segment, clamped to its endpoints.
+    point: LatLon
+    #: Distance from the original point to :attr:`point`, in metres.
+    distance_m: float
+    #: Distance from ``seg_start`` to :attr:`point` along the segment, in metres.
+    along_track_m: float
+    #: :attr:`along_track_m` as a fraction of segment length, in ``[0, 1]``.
+    fraction: float
+
+
+def project_onto_segment(point: LatLon, seg_start: LatLon, seg_end: LatLon) -> SegmentProjection:
+    """Drop ``point`` onto the *finite* segment ``seg_start``-``seg_end``.
+
+    Unlike :func:`cross_track_distance_m`, the result is clamped to the segment, so a
+    point beyond either end is reported at that end rather than on the infinite great
+    circle through it.
+
+    **The sign of the along-track distance is load-bearing.** The textbook formula is
+    ``acos(cos(d13) / cos(xtd))``, and ``acos`` cannot return a negative, so a point
+    *behind* ``seg_start`` yields a positive along-track distance indistinguishable from
+    one the same distance ahead. Left uncorrected, a point 850 m behind the start of an
+    850 m segment reports as 0.1 m from it — collinear with the road, so the
+    perpendicular distance is ~0, and the endpoint clamp never fires. That is the worst
+    possible failure for map matching: a confident, precise, wrong answer. The sign is
+    recovered from ``cos(theta13 - theta12)``, which is negative in exactly that case.
+    """
+    if seg_start == seg_end:
+        return SegmentProjection(seg_start, haversine_m(point, seg_start), 0.0, 0.0)
+
+    seg_len = haversine_m(seg_start, seg_end)
+    d13 = haversine_m(seg_start, point) / EARTH_RADIUS_M
+    theta13 = math.radians(initial_bearing_deg(seg_start, point))
+    theta12 = math.radians(initial_bearing_deg(seg_start, seg_end))
+    dtheta = theta13 - theta12
+
+    xtd = math.asin(max(-1.0, min(1.0, math.sin(d13) * math.sin(dtheta))))
+    cos_xtd = math.cos(xtd)
+    if cos_xtd == 0.0:
+        # Degenerate: the point sits a quarter of the globe off the segment's circle.
+        return SegmentProjection(seg_start, haversine_m(point, seg_start), 0.0, 0.0)
+
+    ratio = max(-1.0, min(1.0, math.cos(d13) / cos_xtd))
+    atd = math.acos(ratio) * EARTH_RADIUS_M
+    if math.cos(dtheta) < 0.0:
+        atd = -atd
+
+    if atd <= 0.0:
+        return SegmentProjection(seg_start, haversine_m(point, seg_start), 0.0, 0.0)
+    if atd >= seg_len:
+        return SegmentProjection(seg_end, haversine_m(point, seg_end), seg_len, 1.0)
+
+    snapped = destination_point(seg_start, math.degrees(theta12), atd)
+    return SegmentProjection(snapped, abs(xtd) * EARTH_RADIUS_M, atd, atd / seg_len)
+
+
 def point_to_segment_distance_m(point: LatLon, seg_start: LatLon, seg_end: LatLon) -> float:
     """Distance from ``point`` to the *finite* segment ``seg_start``-``seg_end``.
 
     Unlike :func:`cross_track_distance_m`, this clamps to the segment endpoints, so a
     point far beyond the end of a road segment is not reported as being on it.
     """
-    if seg_start == seg_end:
-        return haversine_m(point, seg_start)
-
-    seg_len = haversine_m(seg_start, seg_end)
-    # Along-track distance: projection of the point onto the segment's great circle.
-    d13 = haversine_m(seg_start, point) / EARTH_RADIUS_M
-    theta13 = math.radians(initial_bearing_deg(seg_start, point))
-    theta12 = math.radians(initial_bearing_deg(seg_start, seg_end))
-    xtd = math.asin(max(-1.0, min(1.0, math.sin(d13) * math.sin(theta13 - theta12))))
-    cos_xtd = math.cos(xtd)
-    if cos_xtd == 0.0:
-        return abs(xtd) * EARTH_RADIUS_M
-    ratio = max(-1.0, min(1.0, math.cos(d13) / cos_xtd))
-    atd = math.acos(ratio) * EARTH_RADIUS_M
-
-    if atd < 0.0:
-        return haversine_m(point, seg_start)
-    if atd > seg_len:
-        return haversine_m(point, seg_end)
-    return abs(xtd) * EARTH_RADIUS_M
+    return project_onto_segment(point, seg_start, seg_end).distance_m
 
 
 def bounding_box(center: LatLon, radius_m: float) -> tuple[float, float, float, float]:

@@ -393,7 +393,13 @@ class TestUpsertPersistsEveryMutableField:
                 method=LocationMethod.MANUAL_CORRECTION,
                 uncertainty_m=1.5,
             ),
-            road=RoadSegmentRef(source="osm", segment_id="way/12345", name="Abovyan St"),
+            road=RoadSegmentRef(
+                source="osm",
+                segment_id="way/12345",
+                name="Abovyan St",
+                match_distance_m=4.25,
+                heading_delta_deg=7.5,
+            ),
             confidence=0.42,
             severity=Severity.HIGH,
             severity_source=SeveritySource.HUMAN,
@@ -414,6 +420,11 @@ class TestUpsertPersistsEveryMutableField:
         assert stored.location.uncertainty_m == pytest.approx(1.5)
         assert stored.road is not None and stored.road.segment_id == "way/12345"
         assert stored.road.name == "Abovyan St"
+        # Match quality, not just the match. "On Abovyan St" and "19 m from Abovyan St
+        # and nothing else was near" are different claims; dropping these on write would
+        # make every match look equally good.
+        assert stored.road.match_distance_m == pytest.approx(4.25)
+        assert stored.road.heading_delta_deg == pytest.approx(7.5)
         assert stored.confidence == pytest.approx(0.42)
         assert stored.severity is Severity.HIGH
         assert stored.severity_source is SeveritySource.HUMAN
@@ -438,3 +449,89 @@ class TestUpsertPersistsEveryMutableField:
         stored = db.get_defect("d1")
         assert stored.first_seen == NOW, "first_seen must not move"
         assert stored.last_seen == later, "last_seen must advance"
+
+
+class TestHeadingsForMatching:
+    def test_representative_headings_reads_the_frame(self, db: Database):
+        """Map matching needs to know which way the vehicle was pointing; at a
+        crossroads the nearest centreline is often the street nobody drove."""
+        from roadeye.domain.models import Frame
+
+        db.upsert_survey(make_survey())
+        db.insert_frames(
+            [
+                Frame(
+                    frame_id="s1:f1",
+                    survey_id="s1",
+                    video_time_s=1.0,
+                    t_epoch_ms=int(NOW.timestamp() * 1000),
+                    heading_deg=87.5,
+                ),
+                Frame(
+                    frame_id="s1:f2",
+                    survey_id="s1",
+                    video_time_s=2.0,
+                    t_epoch_ms=int(NOW.timestamp() * 1000) + 1000,
+                ),
+            ]
+        )
+        db.upsert_defects(
+            [
+                make_defect("with_heading", representative_frame_id="s1:f1"),
+                make_defect("without_heading", representative_frame_id="s1:f2"),
+                make_defect("no_frame"),
+            ]
+        )
+
+        headings = db.representative_headings()
+        assert headings == {"with_heading": 87.5}, (
+            "a defect whose frame recorded no heading must be absent, not defaulted — "
+            "a made-up heading would silently drive the match"
+        )
+
+
+class TestSchemaMigration:
+    """CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so a new
+    column reaches an existing database only through an explicit ALTER. Without one, a
+    pilot database from last month crashes on the first write."""
+
+    def test_a_v1_database_gains_the_new_columns(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "legacy.db"
+        with Database(path) as database:
+            database.upsert_defects([make_defect()])
+
+        # Rewind to v1: drop the columns added in v2 and reset the version marker.
+        conn = sqlite3.connect(path)
+        conn.execute("ALTER TABLE defects DROP COLUMN road_match_distance_m")
+        conn.execute("ALTER TABLE defects DROP COLUMN road_heading_delta_deg")
+        conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
+        conn.commit()
+        conn.close()
+
+        with Database(path) as reopened:
+            assert reopened.get_defect("d1") is not None
+            columns = {
+                row[1]
+                for row in reopened._conn.execute("PRAGMA table_info(defects)")  # noqa: SLF001
+            }
+            assert {"road_match_distance_m", "road_heading_delta_deg"} <= columns
+            version = reopened._conn.execute(  # noqa: SLF001
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()["value"]
+            assert version == "2"
+
+    def test_a_newer_database_is_refused_rather_than_guessed_at(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "future.db"
+        with Database(path):
+            pass
+        conn = sqlite3.connect(path)
+        conn.execute("UPDATE meta SET value = '999' WHERE key = 'schema_version'")
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(RuntimeError, match="newer than this build"):
+            Database(path)
