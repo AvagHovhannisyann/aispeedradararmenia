@@ -14,17 +14,28 @@ Two images are saved:
 **Privacy.** These images are extracted from public-road video and may contain faces,
 licence plates and identifiable people. They are the *only* part of the defect database
 that carries personal data, which is exactly why they are isolated in one directory
-rather than scattered. Face and plate blurring (M5) hooks in here, at
-:func:`save_defect_evidence`, and until it exists these files must not leave the local
-machine — see ``docs/PRIVACY.md``.
+rather than scattered.
+
+Pass an :class:`~roadeye.privacy.anonymizer.Anonymizer` to redact them. It runs **once,
+on the full frame, before any of the three files is derived from it** — so there is no
+ordering in which an unredacted copy gets written. Redacting each output separately
+would be three chances to forget one, and the one forgotten would be the clean frame
+that feeds training.
+
+Without an anonymizer the images are written as-is, which is legitimate for local
+processing and not for anything else: see ``docs/PRIVACY.md``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from roadeye.domain.models import BoundingBox
+
+if TYPE_CHECKING:
+    from roadeye.privacy.anonymizer import Anonymizer, RedactionReport
 
 #: Padding around a detection when cropping, as a fraction of the box's larger side.
 #: A pothole with no surrounding road is hard to judge — context is what tells a
@@ -40,12 +51,15 @@ MIN_CROP_PX = 160
 class EvidencePaths:
     """Where a defect's images ended up, relative to the evidence directory."""
 
-    #: The unmodified frame. **This is the only one usable for training.**
+    #: The frame without the detection box drawn on it. **The only one usable for
+    #: training** — and redacted, if an anonymizer was supplied.
     frame: str
     #: The frame with the detection outlined, for a human to look at.
     context: str
     #: A padded close-up, for judging small defects.
     crop: str
+    #: What redaction was applied, or ``None`` if the images were written unredacted.
+    redaction: RedactionReport | None = None
 
 
 def evidence_dir_for(db_path: str | Path) -> Path:
@@ -60,13 +74,20 @@ def save_defect_evidence(
     bbox: BoundingBox | None,
     output_dir: str | Path,
     *,
-    anonymize: bool = False,
+    anonymizer: Anonymizer | None = None,
 ) -> EvidencePaths | None:
-    """Write context and crop images for one defect.
+    """Write frame, context and crop images for one defect.
 
     Returns ``None`` when the images cannot be written (no Pillow, unusable pixels)
     rather than raising: losing the picture for one defect must not fail a survey that
     otherwise processed correctly.
+
+    A **redaction** failure is the opposite and propagates as
+    :class:`~roadeye.privacy.base.RedactionError`. The two are different in kind: bad
+    pixels affect one defect, whereas a broken redactor affects every image in the run.
+    Swallowing that would produce a survey that finished cleanly, wrote no evidence, and
+    said nothing about why — or worse, invited a later "just skip redaction if it
+    fails". Stopping on the first one is the point.
     """
     try:
         from PIL import Image, ImageDraw
@@ -82,26 +103,28 @@ def save_defect_evidence(
         array = np.asarray(pixels)
         if array.ndim != 3 or array.shape[2] != 3:
             return None
-        image = Image.fromarray(array.astype("uint8"), "RGB")
+        array = array.astype("uint8")
     except (ImportError, ValueError, TypeError):
         return None
 
-    if anonymize:
-        # The redaction pipeline is not built (M5). Refusing is the right failure:
-        # silently writing unblurred faces because a flag was requested but
-        # unimplemented is exactly the mistake docs/PRIVACY.md exists to prevent.
-        raise NotImplementedError(
-            "anonymisation is not implemented yet (M5). Do not enable it until face "
-            "and plate blurring exists — see docs/PRIVACY.md."
-        )
+    # Redact once, here, before anything is derived. Every file below comes from this
+    # array, so there is no ordering of the writes that leaks an unredacted copy.
+    report = None
+    if anonymizer is not None:
+        array, report = anonymizer.redact(array)
+
+    try:
+        image = Image.fromarray(array, "RGB")
+    except (ValueError, TypeError):
+        return None
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # The clean frame, saved separately and first. Training must never use the context
-    # image: it has a red rectangle drawn on it, and a model trained on those learns to
-    # find red rectangles. Keeping an unmodified copy is the only way the review images
-    # and the training images can be the same pixels without that contamination.
+    # The box-free frame, saved separately and first. Training must never use the
+    # context image: it has a red rectangle drawn on it, and a model trained on those
+    # learns to find red rectangles. Keeping a box-free copy is the only way the review
+    # images and the training images can be the same pixels without that contamination.
     frame_name = f"{defect_id}_frame.jpg"
     image.save(output_dir / frame_name, quality=90)
 
@@ -118,7 +141,7 @@ def save_defect_evidence(
     else:
         _crop_around(image, bbox).save(output_dir / crop_name, quality=88)
 
-    return EvidencePaths(frame=frame_name, context=context_name, crop=crop_name)
+    return EvidencePaths(frame=frame_name, context=context_name, crop=crop_name, redaction=report)
 
 
 def _crop_around(image, bbox: BoundingBox):

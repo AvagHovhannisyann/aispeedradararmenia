@@ -264,7 +264,7 @@ Android first** if a suitable device is available.
 | L-3 | Does storing OSM-derived segment IDs alongside proprietary defects create an ODbL Derivative Database? | Productising the defect database |
 | L-4 | What is the lawful basis under Armenian law HO-49-N for recording public-road video containing identifiable people/plates? | Any municipal deployment |
 | L-5 | Retention period and access controls required for raw survey video under Armenian law | Any municipal deployment |
-| L-6 | COCO checkpoint provenance for any pretrained backbone we ship | Shipping a pretrained-initialised model |
+| L-6 | COCO checkpoint provenance for any pretrained backbone we ship | Shipping a pretrained-initialised model. **Does not block M5 redaction** — see below |
 
 L-4 and L-5 are elaborated in `docs/PRIVACY.md`.
 
@@ -288,6 +288,26 @@ question open instead of quietly settling it.
    whole job is provenance.
 
 Details in `docs/MAP_MATCHING.md`.
+
+### L-6 and the redaction checkpoint
+
+M5's redaction uses torchvision's COCO-pretrained `fasterrcnn_mobilenet_v3_large_fpn` to
+find people and vehicles. That is a pretrained checkpoint, so L-6 applies — and it does
+not block this use, for a reason worth writing down rather than assuming:
+
+**The checkpoint is used locally, to destroy data.** It is never redistributed, never
+shipped inside a product, never used to produce a defect that reaches a customer, and
+contributes nothing to any model we train. A model that *removes* information from our
+own files is a different exposure from one whose outputs we sell.
+
+That distinction is the whole argument, so it has a limit: the moment a COCO-derived
+checkpoint is used to produce a **defect** rather than to erase a pedestrian, L-6 must be
+answered first. `RegionDetector` is a Protocol so the redaction model can be swapped if
+L-6 resolves badly.
+
+Note also what was *not* chosen. A licence-plate detector would have meant either
+Ultralytics (BLOCKING-2) or training our own, and localising a plate is the first half of
+ALPR — prohibited by ADR-007. Detecting whole vehicles avoids both.
 
 ---
 

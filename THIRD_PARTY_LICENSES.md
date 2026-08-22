@@ -17,8 +17,8 @@ licence. See `docs/LICENSE_AUDIT.md`.
 |---|---|---|---|
 | **pydantic** | ≥2.5,<3 | MIT | Only hard runtime dependency |
 
-That is the entire required dependency set. The processing core, its CLI and 330 of its
-392 tests run on Python's standard library plus pydantic. Map matching added no
+That is the entire required dependency set. The processing core, its CLI and 314 of its
+429 tests run on Python's standard library plus pydantic. Map matching added no
 dependency: OSM XML is parsed with `xml.etree`, Overpass with `json` and `urllib`, and
 the road-network file is `gzip` + `json`.
 
@@ -29,7 +29,7 @@ the road-network file is `gzip` + `json`.
 | `video` | PyAV | BSD-3-Clause | Real video decoding |
 | `video`, `quality`, `vision` | numpy | BSD-3-Clause | Arrays, image-quality scoring |
 | `vision` | torch | BSD-3-Clause | Inference/training |
-| `vision` | torchvision | BSD-3-Clause | **M3 baseline detector** |
+| `vision` | torchvision | BSD-3-Clause | **M3 baseline detector**, and the M5 redaction detector |
 | `api` | FastAPI | MIT | Local API |
 | `api` | uvicorn | BSD-3-Clause | ASGI server |
 | `dev` | pytest | MIT | Tests |
@@ -101,7 +101,21 @@ defect records creates a Derivative Database under ODbL. The schema keeps
 
 ## Pretrained checkpoints
 
-**None in use.** Before any pretrained backbone is adopted, record its URL and stated
-licence in `ModelVersion.weights_origin` / `weights_license`. Many detection checkpoints
-are COCO-trained; COCO annotations are CC BY 4.0 and its images are subject to Flickr
-terms. Tracked as L-6.
+| Checkpoint | Origin | Code licence | Weights licence | Use |
+|---|---|---|---|---|
+| `fasterrcnn_mobilenet_v3_large_fpn` (`COCO_V1`) | `download.pytorch.org/models/` | BSD-3-Clause (torchvision) | **Unstated by upstream** — see below | **Redaction only.** Finds people and vehicles so they can be destroyed |
+
+**The weights licence is an open question (L-6), and it does not block this use.**
+torchvision publishes its detection checkpoints without an explicit weights licence
+distinct from the repository's BSD-3. They are COCO-trained; COCO annotations are
+CC BY 4.0 and its images are subject to Flickr terms.
+
+This checkpoint is used **locally, to destroy data**. It is never redistributed, never
+shipped inside a product, never used to produce a defect that reaches a customer, and
+contributes nothing to any model we train. Should L-6 resolve badly, the remedy is to
+swap the detector behind `RegionDetector` — which is why that Protocol exists.
+
+The position is deliberately different from a *road-damage* checkpoint, which would be
+part of the product and would need L-6 answered before shipping. Before adopting any such
+backbone, record its URL and stated licence in `ModelVersion.weights_origin` /
+`weights_license`.

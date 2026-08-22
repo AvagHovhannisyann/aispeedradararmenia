@@ -1,6 +1,8 @@
 # RoadEye — Privacy by Design
 
-**Status:** design position. Legal basis **NOT YET ESTABLISHED** — see Open Questions.
+**Status:** redaction and retention are **implemented** (M5). Legal basis **NOT YET
+ESTABLISHED** — see Open Questions. Engineering controls do not substitute for a lawful
+basis; they reduce the harm if one is later found wanting.
 **Last verified:** 2026-08-22
 
 > This document is engineering policy, **not legal advice**. Items L-4 and L-5 must be
@@ -122,23 +124,95 @@ GPS tracks deserve a note: they are a precise movement record of whoever drove. 
 municipal fleet that is an employment-monitoring question; for a volunteer driver it is
 a personal one. Either way it needs a stated basis.
 
-## Implementation plan
+## Implementation
 
-`src/roadeye/privacy/` is currently a placeholder package. That is honest: the
-anonymisation pipeline is **not built**. Planned:
+`src/roadeye/privacy/` is built (M5).
 
-| Milestone | Capability |
+| Capability | State |
 |---|---|
-| M4 | Retention policy enforcement — delete raw video on schedule, log the deletion |
-| M4 | Redaction interface (`Anonymizer` protocol) mirroring the detector seam |
-| M5 | Face + plate blurring using a permissively licensed detector (licence-audited) |
-| M6 | Access logging on evidence images |
-| M6 | Deletion-request handling (find and purge everything for a given time/place) |
-| Pre-pilot | Data Protection Impact Assessment; counsel review |
+| Redaction interface (`RegionDetector` protocol) mirroring the detector seam | **Built** |
+| People + vehicle blurring using a permissively licensed detector | **Built** |
+| Retention policy enforcement — delete raw video on schedule, log the deletion | **Built** |
+| Access logging on evidence images | M6 |
+| Deletion-request handling (find and purge everything for a given time/place) | M6 |
+| Data Protection Impact Assessment; counsel review | Pre-pilot |
 
-**Until face/plate blurring exists, survey video must not be shared outside the
-founder's machine — not in demos, not in pull requests, not in a pitch deck.** A
-screenshot of a Yerevan street with a readable plate is a disclosure.
+```bash
+roadeye process <bundle> --db yerevan.db     # redacts evidence images by default
+roadeye redact <images> --output <dir>       # redact an existing directory
+roadeye retention <dir>                      # report what is past retention
+roadeye retention <dir> --delete             # delete it, logging every file
+```
+
+### Why people and vehicles rather than faces and plates
+
+The obvious design is a face detector plus a plate detector. Both were rejected.
+
+**Plates.** Every well-maintained open plate detector is YOLO-based, and Ultralytics is
+AGPL-3.0 (ADR-009). Beyond the licence, *localising a plate is the first half of ALPR* —
+and the half that is useful for nothing else. Detecting the **vehicle** covers the plate
+without the system ever having represented one, which is a stronger guarantee than a
+policy saying we do not read them.
+
+**Faces.** A face detector fails exactly where windscreen video needs it: someone facing
+away, a head at 30 px, a figure behind a reflection. A person detector fires on all
+three, and a box around a person contains that person's face by construction.
+
+This matches the commercial precedent above: Vaisala masks *vehicles and people*.
+
+### What redaction actually does
+
+Block averaging, not Gaussian blur. A blur is a convolution — a linear operator — so with
+the kernel known (it is in our source) deconvolution recovers a great deal. A blurred
+face is obscured, not erased. Block averaging maps many pixels onto one value: the
+information is gone in the arithmetic.
+
+**The honest caveat:** mosaic is not unconditionally safe. Where content has low entropy
+— text, and a plate is text — an attacker can enumerate candidates, mosaic each, and
+compare. Redacting whole vehicles is the mitigation: the block is then large relative to
+any text inside it. A `solid` mode exists for when certainty outweighs the image
+remaining legible.
+
+Block size scales with the region, so a pedestrian 12 px tall at the end of the street is
+destroyed as thoroughly as one filling the frame. Boxes are expanded 15% before
+destruction, because detectors clip hair and bumpers and a partially redacted face is not
+a redacted face.
+
+### Rules the code enforces
+
+**Redaction happens once, on the full frame, before any file is derived from it.** All
+three evidence images come from the redacted array. Redacting each separately would be
+three chances to forget one — and the one forgotten would be `_frame.jpg`, the image the
+training export copies, which is the artefact actually intended to leave the machine.
+
+**Failure is loud.** Every path that cannot redact raises. There is no fallback that
+writes the image anyway, no warning-and-continue. An unredacted evidence image is
+indistinguishable from a redacted one by inspection, so a silent degradation is permanent
+and undetectable.
+
+**Opting out is explicit.** `--no-redact` is a flag someone types, and the run record
+then carries a warning saying the images may contain faces and plates. Silence would
+read as "yes, redacted".
+
+**Nothing claims to be anonymous.** A `REDACTION.json` beside the images records which
+detector ran, at what threshold, with what config, and how many regions it destroyed —
+and says in the file that this is best-effort. A detector that missed somebody has
+produced an image with somebody in it, whatever the label says. What the record supports
+is the question actually asked afterwards: *which images did that detector write, so
+which need reprocessing?*
+
+**Deletion is logged before it happens.** A crash mid-sweep leaves a record of intent
+rather than a silent gap. The log holds paths, sizes and ages — never content, because a
+deletion log that quotes what it deleted has recreated it.
+
+**Dry-run is the default.** `roadeye retention` reports; `--delete` deletes.
+
+### Still true
+
+Redaction covers **evidence images**. Raw survey video is not redacted — it is the
+original, and it is the artefact with the shortest retention precisely because it cannot
+be made safe. Raw video must not leave the local machine, must not go to free GPU
+services, and must not appear in a demo or a pitch deck.
 
 ## Open questions for counsel
 
@@ -158,6 +232,9 @@ screenshot of a Yerevan street with a readable plate is a disclosure.
 2. **Never upload raw survey data to a third-party service**, including free GPU
    platforms and AI APIs.
 3. **Never add face or plate *recognition*.** Detection-for-blurring only, and blurring
-   must not retain the identifying crop.
+   must not retain the identifying crop. The `Region` type deliberately has no field
+   that could hold an identity, an embedding or a track — a test asserts its fields are
+   exactly `x1, y1, x2, y2, kind, confidence`, and that `kind` is only `person` or
+   `vehicle`.
 4. **Never widen retention** without updating this document in the same commit.
 5. When in doubt, **collect less**.

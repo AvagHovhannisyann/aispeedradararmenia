@@ -15,13 +15,14 @@ Intended customer: municipalities and road agencies, starting in Yerevan.
 
 | Component | State |
 |---|---|
-| Processing core (`src/roadeye/`) | **Implemented, 392 tests passing** |
+| Processing core (`src/roadeye/`) | **Implemented, 429 tests passing** |
 | Collector (`apps/collector/`) | Scaffolded, **never run on a device** |
 | Detector | Real adapter + training pipeline built (M3). Bootstrap model trained on **Czech** RDD2022 data only |
 | Armenian data | **None** |
 | Review loop (`roadeye review`) | **Implemented** (M4) — evidence, corrections, dataset export |
 | Map matching (`roadeye match-roads`) | **Implemented** (M5) — OSM geometry, synthetic verification only |
-| Dashboard, privacy blurring | **Not built** |
+| Redaction + retention (`roadeye redact` / `retention`) | **Implemented** (M5) — people and vehicles, fail-closed |
+| Dashboard | **Not built** |
 
 **No number this repository can currently produce says anything about a real road.**
 The CLI prints a warning to that effect when the fake detector runs. Do not remove it,
@@ -36,7 +37,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/roadeye validate <bundle> # inspect a survey without processing it
 ```
 
-330 of the 392 tests require **no optional dependency** and run in ~2.5 s; the rest are
+314 of the 429 tests require **no optional dependency** and run in ~1.8 s; the rest are
 `importorskip`-guarded and skip on a bare install. Keep it that way: a suite that needs a
 GPU is a suite that stops being run.
 

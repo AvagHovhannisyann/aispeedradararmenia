@@ -114,15 +114,19 @@ Armenian data.* See `docs/REVIEW_LOOP.md`.
       schema v2, with an additive migration
 - [x] FastAPI local API over domain concepts (delivered early with M4's review UI)
 
+- [x] Redaction interface (`RegionDetector` protocol) mirroring the detector seam
+- [x] People + vehicle blurring — irreversible mosaic, fail-closed, licence-audited
+- [x] Retention policy enforcement with an append-only deletion log (carried from M4)
+
 **Remaining:**
-- [ ] Face/plate blurring (licence-audited detector) — the last thing keeping evidence
-      images on the local machine
-- [ ] Retention policy enforcement + `Anonymizer` interface (carried from M4)
-- [ ] Run map matching on a **real Yerevan survey**, which does not exist until M1
+- [ ] Run map matching and redaction on a **real Yerevan survey**, which does not exist
+      until M1
 
 **Acceptance:** defects are assigned to the correct road segment; nothing leaves the
 laptop unblurred. *Matching is verified on synthetic geometry only — thresholds are
-defensible starting values, not tuned results. See `docs/MAP_MATCHING.md`.*
+defensible starting values, not tuned results (`docs/MAP_MATCHING.md`). Redaction is
+verified on real road photographs and is best-effort by nature: a detector that missed
+somebody has produced an image with somebody in it (`docs/PRIVACY.md`).*
 
 ---
 
