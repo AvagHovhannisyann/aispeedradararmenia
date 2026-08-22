@@ -35,3 +35,6 @@ exports/
 
 # OS
 .DS_Store
+
+# Demo output
+demo_output/

@@ -41,22 +41,32 @@ The phone collects evidence; the laptop does the thinking. That is deliberate �
 
 ## Try it in two minutes
 
-No phone, model or footage needed — this runs the full chain on a synthetic Yerevan
-drive:
+No phone, model, footage or GPU needed.
+
+### Easiest: GitHub Codespaces (runs in your browser)
+
+On the repo page: **Code ▸ Codespaces ▸ Create codespace on main**. Wait for it to
+finish setting up (~2 minutes — it installs everything for you), then in its terminal:
+
+```bash
+./scripts/demo.sh
+```
+
+That runs the whole chain: tests, generate a synthetic drive, validate, process,
+export.
+
+### Or locally
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-.venv/bin/python -m pytest                              # 222 tests, ~1.5s
-
-.venv/bin/python scripts/make_demo_survey.py surveys/demo
-.venv/bin/roadeye validate surveys/demo
-.venv/bin/roadeye process  surveys/demo --db demo.db
-.venv/bin/roadeye export   --db demo.db --geojson demo.geojson --csv demo.csv
+./scripts/demo.sh
 ```
 
-Drag `demo.geojson` onto [geojson.io](https://geojson.io) to see the markers on a real
-map. They should trace an 800 m × 400 m rectangle in Kentron.
+### Then look at the result
+
+Open `demo_output/demo.geojson` at [geojson.io](https://geojson.io) — drag the file
+onto the map. The markers trace an 800 m × 400 m rectangle in central Yerevan.
 
 **What this proves:** timestamps align, positions interpolate, a stop at a red light
 produces no duplicate frames, repeated views collapse into single defects, storage
