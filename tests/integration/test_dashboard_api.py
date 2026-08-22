@@ -293,6 +293,126 @@ class TestRoads:
         assert "OpenStreetMap" in payload["attribution"]
 
 
+class TestStreetsEndpoint:
+    def test_reports_unavailable_without_a_road_network(self, client):
+        """The rollup is a statement about streets. With no geometry there are no
+        streets to make it about, and saying so beats returning an empty list that
+        reads as 'nothing found'."""
+        payload = client.get("/api/streets").json()
+        assert payload["available"] is False
+        assert payload["streets"] == []
+
+    def test_rolls_up_per_street_with_coverage(self, tmp_path):
+        from roadeye.domain.models import Frame
+        from roadeye.geolocation.geodesy import LatLon, destination_point
+        from roadeye.map_matching.network import (
+            NetworkProvenance,
+            RoadNetwork,
+            RoadSegment,
+        )
+
+        origin = LatLon(40.185, 44.515)
+        segments = [
+            RoadSegment(
+                segment_id=f"way/1#{i}",
+                way_id="way/1",
+                start=destination_point(origin, 0.0, 50.0 * i),
+                end=destination_point(origin, 0.0, 50.0 * (i + 1)),
+                name="Test Avenue",
+            )
+            for i in range(8)
+        ]
+        roads = RoadNetwork(
+            segments=segments,
+            provenance=NetworkProvenance(
+                source="synthetic",
+                license="none",
+                attribution="Invented for tests",
+                retrieved_at=NOW,
+            ),
+        ).save(tmp_path / "roads.json")
+
+        db_path = tmp_path / "s.db"
+        with Database(db_path) as db:
+            db.upsert_survey(
+                Survey(
+                    survey_id="s1",
+                    started_at=NOW,
+                    recording_start_epoch_ms=int(NOW.timestamp() * 1000),
+                )
+            )
+            db.insert_frames(
+                [
+                    Frame(
+                        frame_id=f"s1:f{i}",
+                        survey_id="s1",
+                        video_time_s=float(i),
+                        t_epoch_ms=int(NOW.timestamp() * 1000) + i * 1000,
+                        observation_location=GeoPoint(
+                            lat=destination_point(origin, 0.0, 5.0 * i).lat,
+                            lon=destination_point(origin, 0.0, 5.0 * i).lon,
+                            method=LocationMethod.INTERPOLATED_PHONE_GPS,
+                            uncertainty_m=5.0,
+                        ),
+                        heading_deg=0.0,
+                    )
+                    for i in range(60)
+                ]
+            )
+            db.upsert_defects([make_defect("d1", lat=destination_point(origin, 0.0, 100.0).lat)])
+
+        payload = TestClient(create_app(db_path, None, roads)).get("/api/streets").json()
+        assert payload["available"] is True
+        assert len(payload["streets"]) == 1
+        street = payload["streets"][0]
+        assert street["name"] == "Test Avenue"
+        assert street["surveyed_m"] > 200
+        assert street["state"] == "defects"
+        # The street is 400 m long and ~295 m of it was driven. The dashboard writes
+        # "X km of the network's Y km" from on_network_m, so if that field ever stops
+        # being served the coverage line silently renders NaN.
+        assert street["length_m"] == pytest.approx(400, abs=5)
+        assert payload["on_network_m"] == pytest.approx(street["covered_m"], abs=0.1)
+        assert 0.6 < payload["coverage_fraction"] < 0.85
+
+    def test_the_coverage_notice_travels_with_the_payload(self, tmp_path):
+        """The dashboard shows it verbatim. A rollup without it invites reading four
+        surveyed streets as a survey of the city."""
+        from roadeye.geolocation.geodesy import LatLon, destination_point
+        from roadeye.map_matching.network import (
+            NetworkProvenance,
+            RoadNetwork,
+            RoadSegment,
+        )
+
+        origin = LatLon(40.185, 44.515)
+        roads = RoadNetwork(
+            segments=[
+                RoadSegment(
+                    segment_id="way/1#0",
+                    way_id="way/1",
+                    start=origin,
+                    end=destination_point(origin, 0.0, 200.0),
+                    name="Quiet Street",
+                )
+            ],
+            provenance=NetworkProvenance(
+                source="synthetic",
+                license="none",
+                attribution="Invented for tests",
+                retrieved_at=NOW,
+            ),
+        ).save(tmp_path / "roads.json")
+
+        db_path = tmp_path / "s.db"
+        with Database(db_path) as db:
+            db.upsert_defects([make_defect("d1")])
+
+        payload = TestClient(create_app(db_path, None, roads)).get("/api/streets").json()
+        assert "never driven" in payload["notice"]
+        assert payload["network_length_m"] > 0
+
+
 class TestStaticRoutes:
     def test_the_dashboard_page_is_served(self, client):
         response = client.get("/dashboard")

@@ -14,14 +14,14 @@ Built for Armenian municipalities, on a zero software budget.
 
 | Component | State |
 |---|---|
-| Processing core | Implemented — 459 tests, no GPU/ffmpeg/network needed |
+| Processing core | Implemented — 489 tests, no GPU/ffmpeg/network needed |
 | Survey collector (Expo) | Scaffolded, **never run on a device** — but its bundle logic is tested |
 | Road-damage detector | Adapter + training pipeline built. Bootstrap model trained on **Czech** data only — not an Armenian detector |
 | Armenian dataset | **None** |
 | Human review loop | Implemented — review UI, corrections, training-data export |
 | Map matching | Implemented — OSM geometry, street names, ODbL attribution. Verified on synthetic geometry only |
 | Redaction / retention | Implemented — people and vehicles blurred irreversibly, deletions logged |
-| Municipal dashboard | Implemented — **Armenian UI**, map with uncertainty rings, review controls |
+| Municipal dashboard | Implemented — **Armenian UI**, map with uncertainty rings, per-street rollup, review controls |
 
 The CLI prints a warning whenever the fake detector runs. Any output it produces
 describes nothing about any road.

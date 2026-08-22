@@ -47,7 +47,17 @@ class TestImportSafety:
         assert len(DEFAULT_CLASS_ORDER) == 4
 
     def test_missing_weights_raises_detector_error(self, tmp_path):
-        with pytest.raises(DetectorError, match="weights not found"):
+        """Whatever is missing, the caller gets a ``DetectorError`` naming it — never a
+        bare ``ImportError`` or ``FileNotFoundError``.
+
+        The *message* differs by machine, and that is the point. Without torch the
+        constructor cannot get as far as looking for the file, so it reports the
+        dependency instead. Asserting only the "weights not found" wording made this
+        test pass on a laptop with the ML extra installed and fail on exactly the bare
+        install the rest of the suite exists to survive.
+        """
+        expected = "weights not found" if _has_torch() else "torch is required"
+        with pytest.raises(DetectorError, match=expected):
             TorchvisionDetector(tmp_path / "nope.pt")
 
     def test_registry_requires_metadata(self, tmp_path):

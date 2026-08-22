@@ -490,6 +490,67 @@ class TestHeadingsForMatching:
         )
 
 
+class TestFramesReadBackForCoverage:
+    """`survey_frames` is what "how much of this street did we drive?" is measured from
+    (`docs/DASHBOARD.md`). Frames were written from M2 onward and never read back until
+    the street rollup needed them, so the read path is newer than the data it reads."""
+
+    def _drive(self, db: Database) -> None:
+        db.upsert_survey(make_survey())
+        db.insert_frames(
+            [
+                Frame(
+                    frame_id=f"s1:f{i}",
+                    survey_id="s1",
+                    video_time_s=float(i),
+                    t_epoch_ms=int(NOW.timestamp() * 1000) + i * 1000,
+                    observation_location=GeoPoint(
+                        lat=destination_point(ORIGIN, 0.0, 10.0 * i).lat,
+                        lon=destination_point(ORIGIN, 0.0, 10.0 * i).lon,
+                        method=LocationMethod.INTERPOLATED_PHONE_GPS,
+                        uncertainty_m=7.5,
+                    ),
+                    heading_deg=0.0,
+                )
+                for i in range(3)
+            ]
+            + [
+                # Sampled but never positioned — no GPS fix bracketed it.
+                Frame(
+                    frame_id="s1:unplaced",
+                    survey_id="s1",
+                    video_time_s=99.0,
+                    t_epoch_ms=int(NOW.timestamp() * 1000) + 99_000,
+                )
+            ]
+        )
+
+    def test_returns_positioned_frames_in_time_order(self, db: Database):
+        self._drive(db)
+        frames = db.survey_frames()
+
+        assert [f.frame_id for f in frames] == ["s1:f0", "s1:f1", "s1:f2"]
+        assert all(f.observation_location is not None for f in frames)
+        assert frames[0].observation_location.uncertainty_m == 7.5
+        assert frames[0].heading_deg == 0.0
+
+    def test_a_position_without_an_uncertainty_is_not_a_position(self, db: Database):
+        """Rule 7. Reading a NULL uncertainty back as 0.0 would turn a row some other
+        tool wrote into a claim that the camera was located perfectly — and coverage
+        would then be measured from it."""
+        self._drive(db)
+        db._conn.execute("UPDATE frames SET obs_uncertainty_m = NULL WHERE frame_id = 's1:f1'")
+
+        frames = db.survey_frames()
+
+        assert [f.frame_id for f in frames] == ["s1:f0", "s1:f2"]
+
+    def test_can_be_narrowed_to_one_survey(self, db: Database):
+        self._drive(db)
+        assert db.survey_frames("s1")
+        assert db.survey_frames("nonexistent") == []
+
+
 class TestSchemaMigration:
     """CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so a new
     column reaches an existing database only through an explicit ALTER. Without one, a

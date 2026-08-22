@@ -51,6 +51,17 @@ const STRINGS = {
     minConfidence: "Նվազագույն վստահություն",
     clearFilters: "Մաքրել զտիչները",
     legend: "Պայմանանշաններ",
+    streets: "Փողոցներ",
+    streetsNone: "Ճանապարհային ցանց բեռնված չէ։",
+    streetsEmpty: "Ոչ մի փողոց դեռ չի հետազոտվել։",
+    per100m: "100 մ-ի վրա",
+    metres: "մ",
+    drivenKm: "անցած",
+    coverageNote:
+      "Անցած երկարությունը չափվում է տեսախցիկի սեփական երթուղով։ Փողոց, որտեղ վնաս " +
+      "չկա և անցած երկարություն չկա, երբեք չի հետազոտվել — դա ճանապարհի մասին " +
+      "պնդում չէ։",
+    coverageOf: "{covered} կմ ցանցի {total} կմ-ից ({percent})",
 
     pothole: "Փոս",
     alligator_crack: "Ցանցաձև ճաք",
@@ -152,6 +163,16 @@ const STRINGS = {
     minConfidence: "Minimum confidence",
     clearFilters: "Clear filters",
     legend: "Legend",
+    streets: "Streets",
+    streetsNone: "No road network loaded.",
+    streetsEmpty: "No street has been surveyed yet.",
+    per100m: "per 100 m",
+    metres: "m",
+    drivenKm: "driven",
+    coverageNote:
+      "Driven length is measured from the camera's own track. A street with no defects " +
+      "and no driven length was never surveyed — that is not a claim about the road.",
+    coverageOf: "{covered} km of the network's {total} km ({percent})",
 
     pothole: "Pothole",
     alligator_crack: "Alligator crack",
@@ -250,6 +271,7 @@ const state = {
   lang: initialLang(),
   roadAttribution: null,
   lastAttribution: null,
+  streets: null,
 };
 
 /** Translate. Falls back to the key itself, which is visible in testing and harmless. */
@@ -312,6 +334,7 @@ async function load() {
 
   renderCounts(meta.totals || {}, meta.shown || {});
   renderLegend();
+  renderStreets();
   renderSurveys(meta.surveys || []);
   renderBanners(meta);
   renderAttribution(data.attribution);
@@ -367,6 +390,79 @@ function renderLegend() {
       );
     })
     .join("");
+}
+
+/*
+  The streets panel: defects per stretch, densest first.
+
+  A city does not fix one pothole, it resurfaces a length of street — so this is the
+  shape the maintenance decision actually has. The coverage line beneath it is not
+  decoration: without a denominator, four busy streets read as a survey of the city.
+*/
+async function loadStreets() {
+  const box = el("streets");
+  let data;
+  try {
+    const response = await fetch("/api/streets");
+    if (!response.ok) throw new Error(String(response.status));
+    data = await response.json();
+  } catch {
+    box.textContent = t("streetsNone");
+    return;
+  }
+
+  if (!data.available) {
+    box.textContent = t("streetsNone");
+    return;
+  }
+  state.streets = data;
+  renderStreets();
+}
+
+function renderStreets() {
+  const box = el("streets");
+  const data = state.streets;
+  if (!data) return;
+
+  const rows = (data.streets || []).slice(0, 12);
+  if (!rows.length) {
+    box.innerHTML = `<div class="muted">${escapeHtml(t("streetsEmpty"))}</div>`;
+  } else {
+    box.innerHTML = rows
+      .map((s) => {
+        const density = s.defects_per_100m;
+        // "393/400 m driven" rather than "393 m driven": the second number is what a
+        // budget is set against, and without it there is no way to see that a street
+        // was only half inspected.
+        const extent = s.length_m
+          ? `${Math.round(s.surveyed_m)}/${Math.round(s.length_m)}`
+          : `${Math.round(s.surveyed_m)}`;
+        return (
+          `<div class="row">` +
+          `<span class="nm">${escapeHtml(s.name || s.way_id)}</span>` +
+          `<span class="den">${density == null ? "—" : density.toFixed(1)}</span>` +
+          `<span class="sub">${s.outstanding} · ${extent} ${escapeHtml(t("metres"))} ` +
+          `${escapeHtml(t("drivenKm"))} · ${escapeHtml(t("per100m"))}</span>` +
+          `</div>`
+        );
+      })
+      .join("");
+  }
+
+  // Always the denominator, even when every surveyed street looks fine.
+  if (data.network_length_m > 0) {
+    const percent = `${((data.coverage_fraction || 0) * 100).toFixed(1)}%`;
+    // on_network_m, not surveyed_m. Driving off the network, or the same street twice,
+    // is real distance that inspects no more of this network — putting it in the
+    // numerator of "X of the network's Y km" would make the sentence disagree with its
+    // own percentage.
+    const line = t("coverageOf")
+      .replace("{covered}", (data.on_network_m / 1000).toFixed(2))
+      .replace("{total}", (data.network_length_m / 1000).toFixed(1))
+      .replace("{percent}", percent);
+    box.innerHTML +=
+      `<div class="coverage">${escapeHtml(line)}<br>${escapeHtml(t("coverageNote"))}</div>`;
+  }
 }
 
 function renderSurveys(surveys) {
@@ -753,3 +849,4 @@ for (const button of document.querySelectorAll(".langswitch button")) {
 
 initMap();
 applyLanguage();
+loadStreets();

@@ -15,14 +15,14 @@ Intended customer: municipalities and road agencies, starting in Yerevan.
 
 | Component | State |
 |---|---|
-| Processing core (`src/roadeye/`) | **Implemented, 459 tests passing** |
+| Processing core (`src/roadeye/`) | **Implemented, 489 tests passing** |
 | Collector (`apps/collector/`) | Scaffolded, **never run on a device**. Pure logic tested (`npm test`, 31 tests) |
 | Detector | Real adapter + training pipeline built (M3). Bootstrap model trained on **Czech** RDD2022 data only |
 | Armenian data | **None** |
 | Review loop (`roadeye review`) | **Implemented** (M4) — evidence, corrections, dataset export |
 | Map matching (`roadeye match-roads`) | **Implemented** (M5) — OSM geometry, synthetic verification only |
 | Redaction + retention (`roadeye redact` / `retention`) | **Implemented** (M5) — people and vehicles, fail-closed |
-| Dashboard (`roadeye dashboard`) | **Implemented** (M6) — Armenian UI, map, review controls |
+| Dashboard (`roadeye dashboard`) | **Implemented** (M6) — Armenian UI, map, street rollup, review controls |
 
 **No number this repository can currently produce says anything about a real road.**
 The CLI prints a warning to that effect when the fake detector runs. Do not remove it,
@@ -37,9 +37,19 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/roadeye validate <bundle> # inspect a survey without processing it
 ```
 
-314 of the 459 tests require **no optional dependency** and run in ~1.7 s; the rest are
+369 of the 489 tests require **no optional dependency** and run in ~3 s; the rest are
 `importorskip`-guarded and skip on a bare install. Keep it that way: a suite that needs a
 GPU is a suite that stops being run.
+
+That claim is checked, not assumed:
+
+```bash
+PYTHONPATH=scripts .venv/bin/python -m pytest -p bare_install_plugin
+```
+
+hides every optional dependency behind a meta-path blocker, reproducing a bare machine in
+3 s rather than a second venv in minutes. It has already caught a test that passed with
+the extras installed and failed without them.
 
 `ruff check`, `ruff format --check` and `mypy` must all be clean across `.` — the mypy
 scope covers `src/`, `ml/`, `services/` and `scripts/`, not just the domain layer.

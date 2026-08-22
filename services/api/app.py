@@ -416,6 +416,32 @@ def create_app(
             "attribution": network.attribution,
         }
 
+    @app.get("/api/streets")
+    def streets(limit: int = Query(default=200, ge=1, le=5000)) -> dict[str, Any]:
+        """Defects rolled up per stretch of road, with how much of each was driven.
+
+        Empty when no road network is configured — the rollup is a statement about
+        streets, and without geometry there are no streets to make it about.
+        """
+        if roads_path is None or not Path(roads_path).is_file():
+            return {"streets": [], "available": False}
+
+        from roadeye.map_matching.network import RoadNetwork
+        from roadeye.reporting.segments import build_street_report
+
+        network = RoadNetwork.load(roads_path)
+        with _db() as db:
+            report = build_street_report(db.list_defects(), db.survey_frames(), network)
+
+        payload = report.to_json()
+        payload["available"] = True
+        # Densest first: a work plan is read from the top.
+        payload["streets"] = sorted(
+            (s for s in payload["streets"] if s["state"] != "not_surveyed"),
+            key=lambda s: (-(s["defects_per_100m"] or 0), -s["outstanding"]),
+        )[:limit]
+        return payload
+
     @app.get("/api/stats")
     def stats() -> dict[str, Any]:
         with _db() as db:
