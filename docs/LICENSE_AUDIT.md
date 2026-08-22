@@ -149,6 +149,31 @@ touch the product, and even that is discouraged to avoid accidental code reuse.
 This is enforced socially in `CLAUDE.md` and mechanically by not adding it to any
 dependency manifest.
 
+### The LICENSE file is not the answer. The dependency list is.
+
+Surveyed on 2026-08-22, after a road-damage demo reel pointed at a GitHub account with
+354 public repositories. Three of them ship Ultralytics YOLOv8 under an **MIT LICENSE
+file**, and one of those commits `yolov8n.pt` — an Ultralytics-produced weight — into the
+MIT-labelled tree. One of the three advertises pothole detection, which is exactly what
+made it tempting.
+
+Nobody there appears to be acting in bad faith. AGPL propagation is simply not obvious,
+`pip install ultralytics` does not warn, and MIT is what GitHub offers first.
+
+The consequence for us is concrete: **an author cannot grant rights they do not hold.**
+Taking that code under its stated MIT terms would leave RoadEye carrying an AGPL
+obligation while believing it had a permissive one — the worst version of this failure,
+because it looks resolved.
+
+So the check order is fixed:
+
+1. `requirements.txt` / `pyproject.toml` / `package.json` — **first**
+2. imports in the actual source, for anything the manifest missed
+3. `LICENSE` — **last**, and only meaningful once the first two agree with it
+
+A permissive licence sitting on top of a copyleft dependency is not a permissive
+component. It is an unresolved conflict, and it counts as rejected under rule 11.
+
 ---
 
 ## Cleared components (permissive, safe for a proprietary product)

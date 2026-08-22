@@ -36,6 +36,7 @@ Recorded as `ADR-001`.
 │  video/decoder    FrameSource protocol (synthetic ⟷ PyAV)                │
 │  quality/metrics  accept / degrade / reject                              │
 │  vision/base      RoadDamageDetector protocol  ◄── swappable             │
+│  vision/road_...  reject detections that are not on the carriageway       │
 │  tracking         detections ──► tracks   (dedup layer 1)                │
 │  geolocation      video time ──► absolute time ──► interpolated position │
 │  clustering       tracks ──► defects      (dedup layer 2)                │
@@ -63,7 +64,7 @@ pipeline.py · cli.py · services/api  ← orchestration
 
 **The domain layer imports no ML framework.** A `torch.Tensor` in a domain model is a
 bug. This is what makes the whole pipeline testable on a CPU-only machine with no
-weights, no ffmpeg and no network — 400 of the 520 tests need no optional dependency at
+weights, no ffmpeg and no network — 427 of the 547 tests need no optional dependency at
 all and run in ~4 s. `scripts/bare_install_plugin.py` proves it on demand rather than
 trusting it.
 
@@ -163,6 +164,6 @@ apps/collector/      Expo survey collector (TypeScript)
 services/api/        FastAPI + review UI + municipal dashboard
 src/roadeye/         the processing core (implemented)
 ml/                  datasets, training, evaluation, experiments
-tests/               unit · integration · e2e (520 passing)
+tests/               unit · integration · e2e (547 passing)
 docs/                research, decisions, protocol, privacy, metrics
 ```

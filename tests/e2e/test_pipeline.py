@@ -26,6 +26,7 @@ from roadeye.video.decoder import SyntheticFrameSource
 from roadeye.video.sampling import SamplingConfig
 from roadeye.vision.base import RawDetection
 from roadeye.vision.fake import FakeDetector, NullDetector, ScriptedDetector
+from roadeye.vision.road_region import WINDSCREEN_MOUNT
 
 START = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.UTC)
 T0 = int(START.timestamp() * 1000)
@@ -334,3 +335,73 @@ class TestDeterminism:
         assert [round(d.location.lat, 9) for d in a.defects] == [
             round(d.location.lat, 9) for d in b.defects
         ]
+
+
+class TestRoadRegionFiltersByGeometry:
+    """A detector finds crack-shaped things in walls, kerbs and the sky. The region is
+    the cheap filter that keeps them off a work plan — and the expensive mistake it
+    could make is deleting real potholes, so every rejection is counted."""
+
+    #: One frame, two detections: a pothole on the road ahead, and a crack-shaped
+    #: shadow high up on a building beside it.
+    def _script(self, frame_ids):
+        pothole = RawDetection(
+            damage_class=DamageClass.POTHOLE, confidence=0.9, x1=920, y1=820, x2=1000, y2=880
+        )
+        wall = RawDetection(
+            damage_class=DamageClass.LONGITUDINAL_CRACK,
+            confidence=0.9,
+            x1=40,
+            y1=200,
+            x2=120,
+            y2=260,
+        )
+        return {fid: [pothole, wall] for fid in frame_ids}
+
+    def _frame_ids(self):
+        return [f"e2e001:f{round(i * 0.25, 3):.3f}" for i in range(8)]
+
+    def _run(self, bundle, region):
+        return process_bundle(
+            bundle,
+            ScriptedDetector(self._script(self._frame_ids())),
+            frame_source=SyntheticFrameSource(duration_s=3.0, survey_id="e2e001"),
+            config=PipelineConfig(
+                sampling=SamplingConfig(target_spacing_m=2.5, fallback_fps=4.0),
+                road_region=region,
+            ),
+        )
+
+    def test_without_a_region_everything_is_analysed(self, bundle):
+        """The default. No phone has been mounted, so no geometry is assumed."""
+        result = self._run(bundle, None)
+
+        assert result.run.detections_outside_road == 0
+        classes = {d.damage_class for d in result.detections}
+        assert DamageClass.LONGITUDINAL_CRACK in classes, "the wall crack is kept"
+
+    def test_with_a_region_the_wall_is_dropped_and_the_pothole_survives(self, bundle):
+        result = self._run(bundle, WINDSCREEN_MOUNT)
+
+        classes = {d.damage_class for d in result.detections}
+        assert DamageClass.POTHOLE in classes, "a pothole on the road must survive"
+        assert DamageClass.LONGITUDINAL_CRACK not in classes, "the wall must not"
+        assert any(d.damage_class is DamageClass.POTHOLE for d in result.defects)
+
+    def test_what_it_dropped_is_counted_not_hidden(self, bundle):
+        """A filter that silently deletes is indistinguishable from a detector that
+        found nothing, and a cropped-too-tight region would look like a clean street."""
+        filtered = self._run(bundle, WINDSCREEN_MOUNT)
+        unfiltered = self._run(bundle, None)
+
+        assert filtered.run.detections_outside_road > 0
+        assert (
+            filtered.run.detections + filtered.run.detections_outside_road
+            == unfiltered.run.detections
+        ), "every detection is either kept or counted as rejected — none vanish"
+
+    def test_the_region_is_recorded_in_the_run_config(self, bundle):
+        """A run must be reproducible from its own record. Two runs with different
+        regions are not comparable, and the config is where anyone finds that out."""
+        assert self._run(bundle, None).run.config["road_region"] is None
+        assert self._run(bundle, WINDSCREEN_MOUNT).run.config["road_region"]["horizon"] == 0.45

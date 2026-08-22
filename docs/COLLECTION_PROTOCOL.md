@@ -123,6 +123,33 @@ Then update `VIDEO_BYTES_PER_MINUTE` in `apps/collector/src/bundle.ts`. This is 
 of several numbers in this repository that are honest guesses until a real drive replaces
 them.
 
+## After the first survey, measure the road region
+
+A forward-facing camera sees sky, buildings, pavements, parked cars and the vehicle's own
+bonnet. A detector will find crack-shaped things in all of them, and every one becomes a
+`PROBABLE` defect somebody has to open and reject.
+
+`PipelineConfig.road_region` discards detections that are not on the carriageway, using a
+trapezoid in fractions of frame size (`src/roadeye/vision/road_region.py`). **It is off by
+default and must stay off until it is measured**, because the geometry depends entirely on
+where this phone sits in this car — and a region cropped too tight deletes real potholes
+and produces a report that looks like a clean street.
+
+Measuring it takes one frame:
+
+1. Open any frame from the drive in an image viewer that shows pixel coordinates.
+2. Find the **horizon** — where the road disappears. Divide its y by frame height.
+3. Find the **bonnet** — the topmost row of the car's own bodywork at the bottom, if it
+   is in shot. Divide `(height − y)` by height.
+4. Trace the carriageway edges at the bottom of the frame (`near_left`, `near_right`) and
+   just below the horizon (`far_left`, `far_right`), each as x ÷ width.
+5. Set them, reprocess, and compare `detections_outside_road` against what review
+   actually rejected. If the filter is dropping things a reviewer would have kept, it is
+   too tight — widen it. That number is on every run record for exactly this purpose.
+
+Re-measure whenever the mount moves. The values live in `ProcessingRun.config`, so two
+runs with different regions are visibly different runs rather than silently incomparable.
+
 ## After the survey
 
 1. Transfer the bundle off the phone **manually**. There is no automatic upload, by
