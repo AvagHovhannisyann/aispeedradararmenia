@@ -58,6 +58,25 @@ The collector contract test parses `apps/collector/src/survey.ts` as text and as
 its `BUNDLE_SCHEMA_VERSION` and field names match the Python reader. Change one side
 without the other and the build fails — which is the point.
 
+## Exercising the pipeline without a phone
+
+```bash
+python3 scripts/make_demo_survey.py surveys/demo
+roadeye validate surveys/demo
+roadeye process  surveys/demo --db demo.db
+roadeye export   --db demo.db --geojson demo.geojson
+```
+
+The generator simulates a ~2.4 km rectangular circuit through Kentron at ~36 km/h, with
+a 25-second red-light stop partway round. Both details are deliberate: the **turns**
+exercise circular heading interpolation (a straight line would not), and the **stop**
+exercises the stationary guard that stops idling from producing hundreds of duplicate
+frames. A route through (0, 0) would hide latitude/longitude swaps, so it uses real
+Yerevan coordinates and the exported GeoJSON can be eyeballed on a map.
+
+The bundle contains **no imagery**. It exercises the plumbing and says nothing about
+detection quality.
+
 ## Working with synthetic data
 
 The pipeline runs end to end with no real footage:

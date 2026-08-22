@@ -39,18 +39,31 @@ GPS ────────► locations.jsonl  sample frames by distance     e
 The phone collects evidence; the laptop does the thinking. That is deliberate — see
 [ADR-001](docs/DECISIONS/ADR-001-offline-first.md).
 
-## Quick start
+## Try it in two minutes
+
+No phone, model or footage needed — this runs the full chain on a synthetic Yerevan
+drive:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest                              # 222 tests, ~1.5s
 
-.venv/bin/roadeye env                    # host environment report
-.venv/bin/roadeye validate <bundle>      # inspect a survey bundle
-.venv/bin/roadeye process <bundle> --db roadeye.db
-.venv/bin/roadeye export --db roadeye.db --geojson defects.geojson
+.venv/bin/python scripts/make_demo_survey.py surveys/demo
+.venv/bin/roadeye validate surveys/demo
+.venv/bin/roadeye process  surveys/demo --db demo.db
+.venv/bin/roadeye export   --db demo.db --geojson demo.geojson --csv demo.csv
 ```
+
+Drag `demo.geojson` onto [geojson.io](https://geojson.io) to see the markers on a real
+map. They should trace an 800 m × 400 m rectangle in Kentron.
+
+**What this proves:** timestamps align, positions interpolate, a stop at a red light
+produces no duplicate frames, repeated views collapse into single defects, storage
+round-trips, and exports are well-formed and carry their uncertainty.
+
+**What it does not prove:** anything at all about detecting road damage. The detector
+is fake and there are no pixels. `roadeye process` prints a warning saying so.
 
 Requires Python ≥3.11 and one dependency (`pydantic`). Video decoding and real
 detectors are optional extras.
