@@ -31,11 +31,17 @@ vision = ["torch>=2.2", "torchvision>=0.17", "numpy>=1.26"]
 
 api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 
+# Pillow is needed to write the evidence images that make review possible, and
+# numpy to read frames. Both arrive with the vision extra too.
+review = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pillow>=10", "numpy>=1.26"]
+
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
     "ruff>=0.4",
     "mypy>=1.9",
+    # fastapi's TestClient needs an HTTP client to drive the app in-process.
+    "httpx",
 ]
 
 [project.scripts]
@@ -46,7 +52,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." puts the repo root on the path so services/ (not an installed package) is
+# importable by tests without an env var.
+pythonpath = ["src", "."]
 addopts = "-q --strict-markers"
 markers = [
     # Anything needing a GPU, real model weights, ffmpeg or the network. Excluded from

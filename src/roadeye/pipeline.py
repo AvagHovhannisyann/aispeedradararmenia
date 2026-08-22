@@ -36,6 +36,7 @@ from roadeye.domain.models import (
 from roadeye.geolocation.timesync import video_time_to_epoch_ms
 from roadeye.ingest.bundle import SurveyBundle, load_bundle
 from roadeye.quality.metrics import QualityConfig, assess
+from roadeye.reporting.evidence import save_defect_evidence
 from roadeye.storage.db import Database
 from roadeye.tracking.tracker import GreedyIouTracker, TrackingConfig
 from roadeye.video.decoder import (
@@ -66,6 +67,10 @@ class PipelineConfig:
     max_gps_accuracy_m: float = 25.0
     #: Analyse frames the quality gate marked DEGRADED (flagged, not silently trusted).
     analyse_degraded_frames: bool = True
+    #: Where to write per-defect evidence images. ``None`` skips extraction entirely.
+    #: Without these a reviewer sees a frame id and nothing else, which makes review —
+    #: the product's bottleneck — impossible.
+    evidence_dir: Path | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -76,6 +81,7 @@ class PipelineConfig:
             "min_detection_confidence": self.min_detection_confidence,
             "max_gps_accuracy_m": self.max_gps_accuracy_m,
             "analyse_degraded_frames": self.analyse_degraded_frames,
+            "evidence_dir": str(self.evidence_dir) if self.evidence_dir else None,
         }
 
 
@@ -288,6 +294,15 @@ def process_bundle(
         defect_id_prefix=f"{bundle.survey_id}_def",
     )
     run.defects = len(defects)
+
+    if cfg.evidence_dir is not None and defects:
+        saved = _extract_evidence(defects, frames, detections, frame_source, cfg.evidence_dir)
+        if saved < len(defects):
+            run.warnings.append(
+                f"evidence images written for {saved} of {len(defects)} defects; "
+                "the rest cannot be reviewed visually"
+            )
+
     run.finished_at = datetime.now(UTC)
     run.duration_s = round(time.monotonic() - started, 4)
 
@@ -299,6 +314,52 @@ def process_bundle(
         defects=defects,
         observations=observations,
     )
+
+
+def _extract_evidence(
+    defects: list[Defect],
+    frames: list[Frame],
+    detections: list[Detection],
+    frame_source: FrameSource,
+    evidence_dir: Path,
+) -> int:
+    """Write one context + crop image per defect. Returns how many succeeded.
+
+    Deliberately a **second pass** rather than caching pixels during the main loop.
+    Which frame is "representative" is only known after clustering, so caching would
+    mean holding every analysed frame's pixels in memory — hundreds of megabytes for a
+    30-minute survey — to use a handful. Re-requesting the few we need costs one extra
+    read each and bounded memory.
+    """
+    frame_by_id = {f.frame_id: f for f in frames}
+    detection_by_frame: dict[str, Detection] = {}
+    for det in detections:
+        best = detection_by_frame.get(det.frame_id)
+        if best is None or det.confidence > best.confidence:
+            detection_by_frame[det.frame_id] = det
+
+    wanted: dict[float, list[Defect]] = {}
+    for defect in defects:
+        frame = frame_by_id.get(defect.representative_frame_id or "")
+        if frame is not None:
+            wanted.setdefault(frame.video_time_s, []).append(defect)
+    if not wanted:
+        return 0
+
+    saved = 0
+    for video_time_s, image in frame_source.frames_at(sorted(wanted)):
+        for defect in wanted.get(video_time_s, []):
+            detection = detection_by_frame.get(defect.representative_frame_id or "")
+            paths = save_defect_evidence(
+                defect.defect_id,
+                image.pixels,
+                detection.bbox if detection else None,
+                evidence_dir,
+            )
+            if paths is not None:
+                defect.representative_image_path = paths.context
+                saved += 1
+    return saved
 
 
 def open_frame_source(bundle: SurveyBundle) -> FrameSource | None:

@@ -27,6 +27,7 @@ from typing import Any
 
 from roadeye.domain.enums import DamageClass, DefectStatus, LocationMethod, Severity, SeveritySource
 from roadeye.domain.models import (
+    BoundingBox,
     Defect,
     DefectObservation,
     Detection,
@@ -370,10 +371,23 @@ class Database:
                         survey_ids_json, first_seen, last_seen, representative_frame_id,
                         representative_image_path, model_id, processing_run_id, created_at, updated_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    -- Every mutable column must be listed here. A column omitted is
+                    -- silently discarded on write: the caller sees success, the
+                    -- review log records the change, and the defect keeps its old
+                    -- value. damage_class was missing, which threw away exactly the
+                    -- reviewer corrections this system exists to collect.
+                    --
+                    -- Deliberately NOT updated: first_seen and created_at, which
+                    -- describe when this defect was first observed and must not move
+                    -- when it is seen again.
                     ON CONFLICT(defect_id) DO UPDATE SET
+                        damage_class=excluded.damage_class,
                         lat=excluded.lat, lon=excluded.lon,
                         location_method=excluded.location_method,
                         uncertainty_m=excluded.uncertainty_m,
+                        road_source=excluded.road_source,
+                        road_segment_id=excluded.road_segment_id,
+                        road_name=excluded.road_name,
                         confidence=excluded.confidence,
                         severity=excluded.severity,
                         severity_source=excluded.severity_source,
@@ -384,6 +398,8 @@ class Database:
                         last_seen=excluded.last_seen,
                         representative_frame_id=excluded.representative_frame_id,
                         representative_image_path=excluded.representative_image_path,
+                        model_id=excluded.model_id,
+                        processing_run_id=excluded.processing_run_id,
                         updated_at=excluded.updated_at
                     """,
                     (
@@ -634,6 +650,37 @@ class Database:
                     uncertainty_m=r["uncertainty_m"],
                 ),
                 representative_frame_id=r["representative_frame_id"],
+            )
+            for r in cur
+        ]
+
+    def detections_for(self, defect_id: str) -> list[Detection]:
+        """Every detection that contributed to a defect, via its observations.
+
+        Needed by the training export: the human corrected the *class*, but the *box*
+        still comes from the model that found it.
+        """
+        cur = self._conn.execute(
+            """
+            SELECT DISTINCT d.* FROM detections d
+            JOIN defect_observations o ON o.defect_id = ?
+            WHERE ',' || REPLACE(REPLACE(REPLACE(o.detection_ids_json,'[',''),']',''),'"','') || ','
+                  LIKE '%,' || d.detection_id || ',%'
+            ORDER BY d.detection_id
+            """,
+            (defect_id,),
+        )
+        return [
+            Detection(
+                detection_id=r["detection_id"],
+                frame_id=r["frame_id"],
+                survey_id=r["survey_id"],
+                damage_class=DamageClass(r["damage_class"]),
+                confidence=r["confidence"],
+                bbox=BoundingBox(x1=r["x1"], y1=r["y1"], x2=r["x2"], y2=r["y2"]),
+                mask=json.loads(r["mask_json"]) if r["mask_json"] else None,
+                model_id=r["model_id"],
+                track_id=r["track_id"],
             )
             for r in cur
         ]

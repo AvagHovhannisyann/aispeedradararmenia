@@ -15,11 +15,12 @@ Intended customer: municipalities and road agencies, starting in Yerevan.
 
 | Component | State |
 |---|---|
-| Processing core (`src/roadeye/`) | **Implemented, 266 tests passing** |
+| Processing core (`src/roadeye/`) | **Implemented, 331 tests passing** |
 | Collector (`apps/collector/`) | Scaffolded, **never run on a device** |
 | Detector | Real adapter + training pipeline built (M3). Bootstrap model trained on **Czech** RDD2022 data only |
 | Armenian data | **None** |
-| Dashboard, API, map matching, privacy blurring | **Not built** |
+| Review loop (`roadeye review`) | **Implemented** (M4) — evidence, corrections, dataset export |
+| Dashboard, map matching, privacy blurring | **Not built** |
 
 **No number this repository can currently produce says anything about a real road.**
 The CLI prints a warning to that effect when the fake detector runs. Do not remove it,
@@ -94,6 +95,7 @@ Each has an ADR behind it in `docs/DECISIONS/`.
 | How do coordinates work? | `docs/GEOLOCATION.md` |
 | What are the entities? | `docs/DATA_MODEL.md` |
 | How do we train? | `docs/ML_STRATEGY.md`, `docs/TRAINING.md` |
+| How do humans correct it? | `docs/REVIEW_LOOP.md` |
 | What counts as success? | `docs/METRICS.md`, `docs/PILOT_PLAN.md` |
 | What about people in the video? | `docs/PRIVACY.md` |
 | How do we drive a survey? | `docs/COLLECTION_PROTOCOL.md` |

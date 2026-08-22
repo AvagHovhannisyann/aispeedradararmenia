@@ -81,17 +81,26 @@ detections with recorded provenance. *Blocked on M1: there is no Armenian footag
 
 ---
 
-## M4 — Armenian review loop
+## M4 — Armenian review loop ✅ COMPLETE (pending real data)
 
 **Goal:** turn drives into labelled Armenian data.
 
-- [ ] Local review UI: image, class, confidence → approve / reject / correct
-- [ ] Corrections export as a versioned dataset
-- [ ] Hard negatives deliberately collected: manholes, shadows, patches, wet asphalt
-- [ ] Retention policy enforcement + `Anonymizer` interface
+**Done:**
+- [x] Evidence images written per defect — clean frame, annotated context, close-up crop
+- [x] Keyboard-driven review UI: approve / reject / change class / severity / location
+- [x] Reviews are append-only, recording before and after values
+- [x] `roadeye export-dataset` turns decisions into a versioned training dataset
+- [x] Rejections become **hard negatives**; corrections carry the human's class
+- [x] Survey-disjoint splits, with an honest warning when only one drive exists
+- [x] Exported datasets are marked `distribution_allowed: true` — ours, not RDD2022's
+
+**Remaining:**
+- [ ] Retention policy enforcement + `Anonymizer` interface (moved to M5 with blurring)
+- [ ] Run it on **Armenian footage**, which does not exist until M1 completes
 
 **Acceptance:** a reviewer decides in seconds, and corrections flow into a dataset
-version.
+version. *Mechanically verified on synthetic and real road images; blocked on M1 for
+Armenian data.* See `docs/REVIEW_LOOP.md`.
 
 ---
 

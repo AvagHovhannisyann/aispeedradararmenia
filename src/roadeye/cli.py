@@ -7,7 +7,10 @@ Commands
 --------
 ``validate``  inspect a survey bundle and report problems without processing it
 ``process``   run the pipeline over a bundle and store the result
+``detect``    run a detector over images and draw the boxes
+``review``    launch the human-in-the-loop review UI
 ``export``    write defects to CSV / GeoJSON
+``export-dataset``  turn reviewed defects into training data
 ``stats``     summarise what is in a database
 ``env``       report the host environment (useful in a pilot record)
 """
@@ -168,8 +171,55 @@ def _cmd_detect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_review(args: argparse.Namespace) -> int:
+    """Launch the local review UI."""
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"No database at {db_path}. Run `roadeye process` first.", file=sys.stderr)
+        return 1
+
+    try:
+        import uvicorn
+        from services.api.app import create_app
+    except ImportError:
+        # services/ is not an installed package, so fall back to a path import. This
+        # keeps the review UI runnable straight from a source checkout.
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        try:
+            import uvicorn
+            from services.api.app import create_app
+        except ImportError as exc:
+            print(
+                f"The review UI needs the 'api' extra: pip install -e '.[api]'  ({exc})",
+                file=sys.stderr,
+            )
+            return 1
+
+    app = create_app(db_path, args.evidence)
+    print("=" * 62)
+    print(f"  RoadEye review on port {args.port}")
+    print()
+    print("  In a Codespace: click 'Open in Browser' when prompted, or use the")
+    print(f"  PORTS tab and the globe icon on port {args.port}.")
+    print(f"  Locally: http://127.0.0.1:{args.port}")
+    print()
+    print("  Keys:  A approve   R reject   1-4 change class   Q/W/E severity")
+    print("         S skip      N note     arrows navigate")
+    print("=" * 62)
+    # Bound to localhost deliberately: there is no authentication and the evidence
+    # images may contain identifiable people (docs/SECURITY.md, docs/PRIVACY.md).
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def _cmd_process(args: argparse.Namespace) -> int:
     config = PipelineConfig()
+    if args.db and not args.no_evidence:
+        from roadeye.reporting.evidence import evidence_dir_for
+
+        config.evidence_dir = evidence_dir_for(args.db)
     if args.min_confidence is not None:
         config.min_detection_confidence = args.min_confidence
 
@@ -212,6 +262,34 @@ def _cmd_process(args: argparse.Namespace) -> int:
     if db is not None:
         db.close()
     return 1 if result.run.errors else 0
+
+
+def _cmd_export_dataset(args: argparse.Namespace) -> int:
+    """Turn reviewed defects into a training dataset."""
+    from roadeye.reporting.training_export import export_reviewed_dataset
+
+    stats = export_reviewed_dataset(
+        args.db,
+        args.output,
+        evidence_dir=args.evidence,
+        name=args.name,
+        include_negatives=not args.no_negatives,
+    )
+    print(stats.summary())
+    print(f"\nwrote {args.output}/")
+    if stats.images == 0:
+        print(
+            "\nNothing was exported. Review some defects first: roadeye review --db ...",
+            file=sys.stderr,
+        )
+        return 1
+    if len(stats.surveys) < 2:
+        print(
+            "\nNOTE: only one survey, so everything is in the train split. A single "
+            "drive cannot produce an honest held-out set (ADR-008).",
+            file=sys.stderr,
+        )
+    return 0
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
@@ -297,6 +375,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", help="SQLite database to write results into")
     p.add_argument("--json", help="write the run summary to this JSON file")
     p.add_argument("--model", help="model directory; omit to use the FAKE detector")
+    p.add_argument(
+        "--no-evidence",
+        action="store_true",
+        help="skip writing per-defect evidence images (they are what makes review possible)",
+    )
     p.add_argument("--min-confidence", type=float, default=None)
     p.add_argument(
         "--fake-detections",
@@ -306,6 +389,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=_cmd_process)
 
+    p = sub.add_parser("review", help="launch the human review UI")
+    p.add_argument("--db", required=True)
+    p.add_argument("--evidence", help="evidence image directory (default: beside the database)")
+    p.add_argument("--port", type=int, default=8010)
+    p.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="bind address; leave as localhost — there is no authentication",
+    )
+    p.set_defaults(func=_cmd_review)
+
     p = sub.add_parser("export", help="export defects to CSV / GeoJSON")
     p.add_argument("--db", required=True)
     p.add_argument("--csv")
@@ -314,6 +408,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", choices=[s.value for s in DefectStatus])
     p.add_argument("--min-confidence", type=float)
     p.set_defaults(func=_cmd_export)
+
+    p = sub.add_parser(
+        "export-dataset",
+        help="turn reviewed defects into a training dataset (closes the review loop)",
+    )
+    p.add_argument("--db", required=True)
+    p.add_argument("--output", required=True, help="dataset directory to write")
+    p.add_argument("--evidence", help="evidence image directory (default: beside the database)")
+    p.add_argument("--name", help="dataset name recorded in the manifest")
+    p.add_argument(
+        "--no-negatives",
+        action="store_true",
+        help="omit rejected defects — they are hard negatives and usually worth keeping",
+    )
+    p.set_defaults(func=_cmd_export_dataset)
 
     p = sub.add_parser("stats", help="summarise a database")
     p.add_argument("--db", required=True)

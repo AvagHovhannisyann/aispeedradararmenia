@@ -33,6 +33,8 @@ tests run on Python's standard library plus pydantic.
 | `dev` | pytest | MIT | Tests |
 | `dev` | ruff | MIT | Lint/format |
 | `dev` | mypy | MIT | Type checking |
+| `dev` | httpx | BSD-3-Clause | Drives FastAPI's TestClient in-process |
+| `review`, `vision` | Pillow | MIT-CMU (HPND) | Evidence images and annotation drawing |
 
 PyAV bundles/links FFmpeg, which is **LGPL-2.1+ or GPL-2+ depending on build options**.
 It is an optional extra invoked as a library for decoding only. Before distributing any

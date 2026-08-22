@@ -359,3 +359,82 @@ class TestPersistence:
         with Database(path) as second:
             assert second.get_defect("d1") is not None
             assert len(second.defects_near(ORIGIN.lat, ORIGIN.lon, 50.0)) == 1
+
+
+class TestUpsertPersistsEveryMutableField:
+    """Regression: a column missing from the ON CONFLICT clause is silently dropped.
+
+    ``damage_class`` was absent, so a reviewer correcting a misclassified defect got a
+    success response and an entry in the append-only review log — while the defect kept
+    its original class. That silently discards the single most valuable output of the
+    whole review loop, and nothing surfaces the loss.
+
+    This test walks every mutable field rather than checking one, so the next column
+    added to the schema and forgotten in the update clause fails here.
+    """
+
+    def test_damage_class_survives_an_update(self, db: Database):
+        db.upsert_defects([make_defect(damage_class=DamageClass.POTHOLE)])
+        db.upsert_defects([make_defect(damage_class=DamageClass.ALLIGATOR_CRACK)])
+        assert db.get_defect("d1").damage_class is DamageClass.ALLIGATOR_CRACK
+
+    def test_every_mutable_field_survives_an_update(self, db: Database):
+        from roadeye.domain.enums import DefectTrend
+        from roadeye.domain.models import RoadSegmentRef
+
+        db.upsert_defects([make_defect()])
+
+        moved = destination_point(ORIGIN, 270.0, 400.0)
+        updated = make_defect(
+            damage_class=DamageClass.TRANSVERSE_CRACK,
+            location=GeoPoint(
+                lat=moved.lat,
+                lon=moved.lon,
+                method=LocationMethod.MANUAL_CORRECTION,
+                uncertainty_m=1.5,
+            ),
+            road=RoadSegmentRef(source="osm", segment_id="way/12345", name="Abovyan St"),
+            confidence=0.42,
+            severity=Severity.HIGH,
+            severity_source=SeveritySource.HUMAN,
+            status=DefectStatus.VERIFIED,
+            trend=DefectTrend.WORSENING,
+            observation_count=9,
+            survey_ids=["aug18", "sep08"],
+            representative_frame_id="s1:f9.5",
+            representative_image_path="d1_context.jpg",
+            model_id="armenia_v001",
+            processing_run_id="run_zzz",
+        )
+        db.upsert_defects([updated])
+
+        stored = db.get_defect("d1")
+        assert stored.damage_class is DamageClass.TRANSVERSE_CRACK
+        assert stored.location.method is LocationMethod.MANUAL_CORRECTION
+        assert stored.location.uncertainty_m == pytest.approx(1.5)
+        assert stored.road is not None and stored.road.segment_id == "way/12345"
+        assert stored.road.name == "Abovyan St"
+        assert stored.confidence == pytest.approx(0.42)
+        assert stored.severity is Severity.HIGH
+        assert stored.severity_source is SeveritySource.HUMAN
+        assert stored.status is DefectStatus.VERIFIED
+        assert stored.trend is DefectTrend.WORSENING
+        assert stored.observation_count == 9
+        assert stored.survey_ids == ["aug18", "sep08"]
+        assert stored.representative_frame_id == "s1:f9.5"
+        assert stored.representative_image_path == "d1_context.jpg"
+        assert stored.model_id == "armenia_v001"
+        assert stored.processing_run_id == "run_zzz"
+
+    def test_first_seen_does_not_move_when_seen_again(self, db: Database):
+        """first_seen records when a defect was FIRST observed. A later survey seeing
+        it again must not rewrite its history."""
+        original = make_defect(first_seen=NOW, last_seen=NOW)
+        db.upsert_defects([original])
+
+        later = NOW + dt.timedelta(days=21)
+        db.upsert_defects([make_defect(first_seen=later, last_seen=later)])
+
+        stored = db.get_defect("d1")
+        assert stored.first_seen == NOW, "first_seen must not move"
+        assert stored.last_seen == later, "last_seen must advance"
