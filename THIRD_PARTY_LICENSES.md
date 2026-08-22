@@ -18,7 +18,7 @@ licence. See `docs/LICENSE_AUDIT.md`.
 | **pydantic** | ≥2.5,<3 | MIT | Only hard runtime dependency |
 
 That is the entire required dependency set. The processing core, its CLI and 314 of its
-429 tests run on Python's standard library plus pydantic. Map matching added no
+452 tests run on Python's standard library plus pydantic. Map matching added no
 dependency: OSM XML is parsed with `xml.etree`, Overpass with `json` and `urllib`, and
 the road-network file is `gzip` + `json`.
 
@@ -37,6 +37,7 @@ the road-network file is `gzip` + `json`.
 | `dev` | mypy | MIT | Type checking |
 | `dev` | httpx | BSD-3-Clause | Drives FastAPI's TestClient in-process |
 | `review`, `vision` | Pillow | MIT-CMU (HPND) | Evidence images and annotation drawing |
+| — (browser) | MapLibre GL JS 4.7.1 | BSD-3-Clause | **In use** by the M6 dashboard. Loaded from unpkg at view time, not vendored — see ADR-010 |
 
 PyAV bundles/links FFmpeg, which is **LGPL-2.1+ or GPL-2+ depending on build options**.
 It is an optional extra invoked as a library for decoding only. Before distributing any
@@ -60,7 +61,6 @@ would impose obligations an LGPL build does not.
 | Detectron2 | Apache-2.0 | DEFER — maintenance mode, no tagged release since v0.6 (2021) |
 | ONNX / ONNX Runtime | MIT | Mobile deployment path |
 | LiteRT | Apache-2.0 | Android on-device (target the `CompiledModel` API) |
-| MapLibre GL JS | BSD-3-Clause | Dashboard maps |
 | Label Studio Community | Apache-2.0 | Annotation |
 | CVAT Community | MIT | Annotation. **Caveat:** some serverless assets/dependencies carry separate licences — audit before enabling AI-assisted annotation |
 | SQLite (+ R*Tree) | Public domain | In use via Python stdlib |

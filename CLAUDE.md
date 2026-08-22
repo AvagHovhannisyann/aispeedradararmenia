@@ -15,14 +15,14 @@ Intended customer: municipalities and road agencies, starting in Yerevan.
 
 | Component | State |
 |---|---|
-| Processing core (`src/roadeye/`) | **Implemented, 429 tests passing** |
+| Processing core (`src/roadeye/`) | **Implemented, 452 tests passing** |
 | Collector (`apps/collector/`) | Scaffolded, **never run on a device** |
 | Detector | Real adapter + training pipeline built (M3). Bootstrap model trained on **Czech** RDD2022 data only |
 | Armenian data | **None** |
 | Review loop (`roadeye review`) | **Implemented** (M4) — evidence, corrections, dataset export |
 | Map matching (`roadeye match-roads`) | **Implemented** (M5) — OSM geometry, synthetic verification only |
 | Redaction + retention (`roadeye redact` / `retention`) | **Implemented** (M5) — people and vehicles, fail-closed |
-| Dashboard | **Not built** |
+| Dashboard (`roadeye dashboard`) | **Implemented** (M6) — Armenian UI, map, review controls |
 
 **No number this repository can currently produce says anything about a real road.**
 The CLI prints a warning to that effect when the fake detector runs. Do not remove it,
@@ -37,7 +37,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/roadeye validate <bundle> # inspect a survey without processing it
 ```
 
-314 of the 429 tests require **no optional dependency** and run in ~1.8 s; the rest are
+314 of the 452 tests require **no optional dependency** and run in ~1.7 s; the rest are
 `importorskip`-guarded and skip on a bare install. Keep it that way: a suite that needs a
 GPU is a suite that stops being run.
 
@@ -103,6 +103,7 @@ Each has an ADR behind it in `docs/DECISIONS/`.
 | How do we train? | `docs/ML_STRATEGY.md`, `docs/TRAINING.md` |
 | How do humans correct it? | `docs/REVIEW_LOOP.md` |
 | Which street is this defect on? | `docs/MAP_MATCHING.md` |
+| What does the city see? | `docs/DASHBOARD.md` |
 | What counts as success? | `docs/METRICS.md`, `docs/PILOT_PLAN.md` |
 | What about people in the video? | `docs/PRIVACY.md` |
 | How do we drive a survey? | `docs/COLLECTION_PROTOCOL.md` |

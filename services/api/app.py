@@ -35,7 +35,7 @@ from roadeye.domain.enums import (
     SeveritySource,
 )
 from roadeye.domain.models import Defect, GeoPoint, Review
-from roadeye.reporting.export import summarize
+from roadeye.reporting.export import summarize, to_geojson
 from roadeye.storage.db import Database
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -71,8 +71,47 @@ def _apply(defect: Defect, updates: dict[str, Any]) -> Defect:
     return Defect.model_validate(data)
 
 
-def create_app(db_path: str | Path, evidence_dir: str | Path | None = None) -> FastAPI:
-    """Build the review app against a specific database."""
+#: Model-id prefixes that mean "this output describes no real road". The CLI already
+#: prints a warning when the fake detector runs; a dashboard is where that warning
+#: matters most, because synthetic markers on a real map of Yerevan look exactly like a
+#: working product.
+SYNTHETIC_MODEL_PREFIXES = ("fake-", "scripted-", "null-")
+
+
+def _provenance(defects: list[Defect]) -> dict[str, Any]:
+    """What produced this data, and whether it can be believed.
+
+    Returned to the dashboard so the page can refuse to look authoritative about
+    synthetic output. Reported from the defects themselves rather than from a flag
+    somebody has to remember to set.
+
+    Warnings are **codes with parameters, not prose**. The dashboard's first language is
+    Armenian, and an English sentence built here would arrive untranslatable — the one
+    place on the page where the honesty warnings live is the last place that should fall
+    back to a language the reader may not have.
+    """
+    models = sorted({d.model_id for d in defects if d.model_id})
+    synthetic = [m for m in models if m.startswith(SYNTHETIC_MODEL_PREFIXES)]
+    warnings: list[dict[str, Any]] = []
+    if synthetic:
+        warnings.append({"code": "synthetic_detector", "models": ", ".join(synthetic)})
+    if defects and not any(d.status is DefectStatus.VERIFIED for d in defects):
+        warnings.append({"code": "none_verified"})
+    return {"models": models, "synthetic": bool(synthetic), "warnings": warnings}
+
+
+def create_app(
+    db_path: str | Path,
+    evidence_dir: str | Path | None = None,
+    roads_path: str | Path | None = None,
+) -> FastAPI:
+    """Build the review app against a specific database.
+
+    ``roads_path`` is an optional road network from ``roadeye roads``. When present the
+    dashboard draws streets from it rather than depending on a tile server — which is
+    the offline-first answer, and the only one compatible with
+    ``tile.openstreetmap.org``'s usage policy excluding production use.
+    """
     db_path = Path(db_path)
     if evidence_dir is None:
         from roadeye.reporting.evidence import evidence_dir_for
@@ -92,12 +131,39 @@ def create_app(db_path: str | Path, evidence_dir: str | Path | None = None) -> F
         # "SQLite objects created in a thread can only be used in that same thread".
         return Database(db_path)
 
+    def _static(name: str, media_type: str) -> FileResponse:
+        path = STATIC_DIR / name
+        if not path.is_file():  # pragma: no cover - packaging error
+            raise HTTPException(status_code=500, detail=f"{name} is missing")
+        return FileResponse(path, media_type=media_type)
+
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         page = STATIC_DIR / "review.html"
         if not page.exists():  # pragma: no cover - packaging error
             raise HTTPException(status_code=500, detail="review.html is missing")
         return page.read_text(encoding="utf-8")
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    def dashboard() -> FileResponse:
+        return _static("dashboard.html", "text/html")
+
+    @app.get("/static/{name}")
+    def static_asset(name: str) -> FileResponse:
+        """Serve the dashboard's CSS and JS.
+
+        Whitelisted by name rather than mounted as a directory: this app also serves an
+        evidence directory of survey imagery, and a static mount is one misconfiguration
+        away from serving the wrong tree.
+        """
+        allowed = {
+            "dashboard.css": "text/css",
+            "dashboard.js": "application/javascript",
+        }
+        media_type = allowed.get(name)
+        if media_type is None:
+            raise HTTPException(status_code=404, detail="no such asset")
+        return _static(name, media_type)
 
     @app.get("/api/queue")
     def queue(
@@ -255,6 +321,100 @@ def create_app(db_path: str | Path, evidence_dir: str | Path | None = None) -> F
                 )
             )
             return {"defect_id": defect_id, "status": defect.status.value, "applied": new}
+
+    @app.get("/api/map")
+    def map_data(
+        damage_class: DamageClass | None = None,
+        status: DefectStatus | None = None,
+        survey_id: str | None = None,
+        min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+        severity: Severity | None = None,
+        limit: int = Query(default=5000, ge=1, le=50000),
+    ) -> dict[str, Any]:
+        """Everything the dashboard map draws, in one request.
+
+        Returns GeoJSON so the payload is directly consumable by MapLibre, QGIS and
+        anything else a municipality already owns — the dashboard is not a privileged
+        client with its own private format.
+
+        ``totals`` is computed over the **whole database**, not the filtered set, and
+        ``shown`` over the filtered one. Both are returned because a summary that
+        silently reflected the active filter would let someone read "12 defects" off a
+        screen that was hiding ninety.
+        """
+        with _db() as db:
+            everything = db.list_defects()
+            defects = db.list_defects(
+                damage_class=damage_class,
+                status=status,
+                survey_id=survey_id,
+                min_confidence=min_confidence or None,
+                limit=limit,
+            )
+            if severity is not None:
+                defects = [d for d in defects if d.severity is severity]
+
+            surveys = sorted({s for d in everything for s in d.survey_ids})
+
+        collection = to_geojson(defects)
+        collection["roadeye"]["shown"] = summarize(defects)
+        collection["roadeye"]["totals"] = summarize(everything)
+        collection["roadeye"]["surveys"] = surveys
+        collection["roadeye"]["truncated"] = len(defects) >= limit
+        collection["roadeye"]["provenance"] = _provenance(everything)
+        return collection
+
+    @app.get("/api/roads")
+    def roads() -> dict[str, Any]:
+        """The local road network as GeoJSON lines, for street context without tiles.
+
+        Loaded per request rather than cached at startup so replacing the file does not
+        need a restart — a city extract is tens of thousands of short segments, which is
+        milliseconds to read and a rounding error next to the request itself.
+
+        Returns an empty collection rather than a 404 when no network is configured: the
+        dashboard treats streets as optional decoration and must not have to distinguish
+        "no roads file" from "the request failed".
+        """
+        empty: dict[str, Any] = {"type": "FeatureCollection", "features": [], "attribution": None}
+        if roads_path is None or not Path(roads_path).is_file():
+            return empty
+
+        from roadeye.map_matching.network import RoadNetwork
+
+        network = RoadNetwork.load(roads_path)
+
+        # One feature per way, not per segment: a city is ~100k segments and ~10k ways,
+        # and MapLibre draws a tenth as many lines an order of magnitude faster.
+        by_way: dict[str, dict[str, Any]] = {}
+        for segment in network.segments:
+            way = by_way.setdefault(
+                segment.way_id,
+                {"name": segment.name, "highway": segment.highway, "points": []},
+            )
+            way["points"].append(segment)
+
+        features = []
+        for way_id, way in by_way.items():
+            segments = way["points"]
+            coordinates = [[segments[0].start.lon, segments[0].start.lat]]
+            coordinates.extend([[s.end.lon, s.end.lat] for s in segments])
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": coordinates},
+                    "properties": {
+                        "way_id": way_id,
+                        "name": way["name"],
+                        "highway": way["highway"],
+                    },
+                }
+            )
+        return {
+            "type": "FeatureCollection",
+            "features": features,
+            "attribution": network.attribution,
+        }
 
     @app.get("/api/stats")
     def stats() -> dict[str, Any]:

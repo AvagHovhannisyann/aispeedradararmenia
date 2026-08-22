@@ -1,0 +1,122 @@
+<!doctype html>
+<!--
+  RoadEye municipal dashboard (M6).
+
+  Static HTML/CSS/JS, no build step — ADR-010.
+
+  Armenian is the default language, because the people who will use this work for
+  Yerevan's municipality. English is a toggle, not the other way round. Every visible
+  string carries a data-i18n key and lives in dashboard.js; nothing user-facing is
+  hard-coded here.
+
+  Two things this page is built to never do:
+    * merge probable with verified into one number, and
+    * draw a defect as a bare point, which reads as precision the GPS did not have.
+-->
+<html lang="hy">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadEye</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<link href="/static/dashboard.css" rel="stylesheet">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span class="brand-text">
+      <strong>RoadEye</strong>
+      <span class="muted" data-i18n="subtitle"></span>
+    </span>
+  </div>
+
+  <div id="counts" class="counts"></div>
+
+  <div class="topbar-actions">
+    <div class="langswitch" role="group" aria-label="Language">
+      <button type="button" data-lang="hy" class="active">ՀԱՅ</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
+    <a class="linkbtn" href="/" data-i18n="reviewQueue"></a>
+  </div>
+</header>
+
+<div id="banners"></div>
+
+<main class="layout">
+  <aside class="panel filters" id="filters">
+    <h2 data-i18n="filter"></h2>
+
+    <label><span data-i18n="defectType"></span>
+      <select id="f-class">
+        <option value="" data-i18n="allTypes"></option>
+        <option value="pothole" data-i18n="pothole"></option>
+        <option value="alligator_crack" data-i18n="alligator_crack"></option>
+        <option value="longitudinal_crack" data-i18n="longitudinal_crack"></option>
+        <option value="transverse_crack" data-i18n="transverse_crack"></option>
+      </select>
+    </label>
+
+    <label><span data-i18n="reviewState"></span>
+      <select id="f-status">
+        <option value="" data-i18n="allStates"></option>
+        <option value="probable" data-i18n="probableLong"></option>
+        <option value="verified" data-i18n="verifiedLong"></option>
+        <option value="rejected" data-i18n="rejectedLong"></option>
+      </select>
+    </label>
+
+    <label><span data-i18n="severity"></span>
+      <select id="f-severity">
+        <option value="" data-i18n="anySeverity"></option>
+        <option value="unassessed" data-i18n="unassessed"></option>
+        <option value="low" data-i18n="low"></option>
+        <option value="medium" data-i18n="medium"></option>
+        <option value="high" data-i18n="high"></option>
+      </select>
+    </label>
+
+    <label><span data-i18n="survey"></span>
+      <select id="f-survey"></select>
+    </label>
+
+    <label class="rangelabel">
+      <span data-i18n="minConfidence"></span>
+      <output id="f-confidence-out">0%</output>
+      <input id="f-confidence" type="range" min="0" max="95" step="5" value="0">
+    </label>
+
+    <button id="f-reset" class="ghost" data-i18n="clearFilters"></button>
+
+    <h2 data-i18n="legend"></h2>
+    <ul class="legend" id="legend"></ul>
+
+    <p class="note" data-i18n="ringNote"></p>
+  </aside>
+
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div id="maperror" class="maperror" hidden>
+      <h2 data-i18n="mapFailedTitle"></h2>
+      <p data-i18n="mapFailedBody"></p>
+    </div>
+  </div>
+
+  <aside class="panel detail" id="detail">
+    <div class="detail-empty" id="detail-empty">
+      <div class="empty-mark" aria-hidden="true"></div>
+      <h2 data-i18n="nothingSelected"></h2>
+      <p data-i18n="nothingSelectedBody"></p>
+    </div>
+    <div class="detail-body" id="detail-body" hidden></div>
+  </aside>
+</main>
+
+<footer class="attribution" id="attribution"></footer>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

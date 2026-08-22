@@ -130,15 +130,26 @@ somebody has produced an image with somebody in it (`docs/PRIVACY.md`).*
 
 ---
 
-## M6 — Dashboard
+## M6 — Dashboard ✅ COMPLETE (pending real data and a real reader)
 
-- [ ] React + TypeScript + MapLibre map
-- [ ] Filters: class, severity, verification state, survey, confidence
-- [ ] Defect panel: evidence, confidence, uncertainty, model version, review controls
-- [ ] Summary counts keeping probable and verified separate
+**Done:**
+- [x] MapLibre map, **Armenian by default** with an English toggle
+- [x] Filters: class, severity, verification state, survey, confidence
+- [x] Defect panel: evidence, confidence, uncertainty, street, model version, review controls
+- [x] Summary counts keeping probable and verified separate — and filtered-vs-total apart
+- [x] Uncertainty drawn as a ring in **metres**, so a pin never implies precision
+- [x] Streets drawn from the local road network, so no tile server is required
+- [x] Provenance banner: synthetic output declares itself
+
+Built without React or a build step — [ADR-010](DECISIONS/ADR-010-dashboard-without-a-build-step.md).
+
+**Remaining:**
+- [ ] Show it to an actual municipal employee and watch where they get stuck
+- [ ] Run it on **Armenian data**, which does not exist until M1
 
 **Acceptance:** a non-technical person understands it unaided and can review a defect in
-seconds.
+seconds. *Mechanically complete; the "understands it unaided" half is unverified until a
+non-technical person has sat in front of it.* See `docs/DASHBOARD.md`.
 
 ---
 
