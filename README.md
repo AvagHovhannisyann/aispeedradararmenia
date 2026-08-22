@@ -14,14 +14,14 @@ Built for Armenian municipalities, on a zero software budget.
 
 | Component | State |
 |---|---|
-| Processing core | Implemented — 429 tests, no GPU/ffmpeg/network needed |
+| Processing core | Implemented — 452 tests, no GPU/ffmpeg/network needed |
 | Survey collector (Expo) | Scaffolded, **never run on a device** |
 | Road-damage detector | Adapter + training pipeline built. Bootstrap model trained on **Czech** data only — not an Armenian detector |
 | Armenian dataset | **None** |
 | Human review loop | Implemented — review UI, corrections, training-data export |
 | Map matching | Implemented — OSM geometry, street names, ODbL attribution. Verified on synthetic geometry only |
 | Redaction / retention | Implemented — people and vehicles blurred irreversibly, deletions logged |
-| Dashboard | Not built |
+| Municipal dashboard | Implemented — **Armenian UI**, map with uncertainty rings, review controls |
 
 The CLI prints a warning whenever the fake detector runs. Any output it produces
 describes nothing about any road.
@@ -146,6 +146,7 @@ hosted municipal dashboard. It is rejected for the shipping path, not merely not
 | [METRICS](docs/METRICS.md) | Model metrics vs the ones that matter |
 | [REVIEW_LOOP](docs/REVIEW_LOOP.md) | How human corrections become training data |
 | [MAP_MATCHING](docs/MAP_MATCHING.md) | Turning a coordinate into a street name |
+| [DASHBOARD](docs/DASHBOARD.md) | What a municipality actually sees |
 | [TRAINING](docs/TRAINING.md) | Getting the data, and where to actually train |
 | [PRIVACY](docs/PRIVACY.md) | People in the footage |
 | [COLLECTION_PROTOCOL](docs/COLLECTION_PROTOCOL.md) | How to drive a survey |
@@ -158,8 +159,7 @@ hosted municipal dashboard. It is rejected for the shipping path, not merely not
 ```
 src/roadeye/       processing core (implemented)
 apps/collector/    Expo survey collector
-apps/dashboard/    React + MapLibre municipal UI      [M6]
-services/api/      FastAPI local API + review UI
+services/api/      FastAPI + review UI + municipal dashboard
 ml/                datasets, training, experiments
 tests/             unit · integration · e2e
 docs/              research, decisions, protocol

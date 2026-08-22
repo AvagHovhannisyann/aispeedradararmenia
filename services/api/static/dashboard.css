@@ -1,0 +1,408 @@
+/*
+  RoadEye dashboard styling.
+
+  Written for the acceptance criterion in docs/MILESTONES.md M6: "a non-technical person
+  understands it unaided". So: full words rather than field names, one accent colour per
+  defect type reused everywhere, and the two numbers that must never be confused —
+  probable and verified — given visibly different weight rather than sitting in a row.
+
+  Armenian is the default interface language, so the font stack leads with faces that
+  actually carry Armenian glyphs. No webfont: pulling one from Google Fonts would put a
+  network dependency in a product whose whole posture is offline-first (ADR-010), for a
+  script the system fonts already cover on every platform we target.
+*/
+
+:root {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --ink: #16191d;
+  --ink-2: #3d444d;
+  --muted: #737b85;
+  --line: #e2e6ec;
+  --line-soft: #eef1f5;
+  --accent: #1f6feb;
+
+  /* One colour per defect type, reused in the legend, the map and the detail panel.
+     Chosen to stay distinguishable in the most common form of colour blindness, and
+     never used as the only signal — every marker also carries a text label on click. */
+  --pothole: #d1341f;
+  --alligator: #b06f00;
+  --longitudinal: #12795a;
+  --transverse: #5b4bb5;
+
+  --verified: #157f3b;
+  --probable: #a06800;
+  --rejected: #7a828c;
+
+  --shadow-sm: 0 1px 2px rgba(16, 20, 26, 0.06);
+  --shadow: 0 2px 10px rgba(16, 20, 26, 0.07);
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+/*
+  The `hidden` attribute works through the user-agent rule `[hidden] { display: none }`,
+  which ANY author rule setting `display` silently outranks. `.maperror` sets
+  `display: grid`, so it rendered permanently — a full-bleed panel sitting over the map,
+  covering it and swallowing every click. The map underneath was working the whole time.
+
+  Stated once, here, so the next element given both `hidden` and a display rule does not
+  reintroduce it.
+*/
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 "Noto Sans Armenian", "Segoe UI", "Arial Armenian", Sylfaen,
+        system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h2 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 22px 0 10px;
+}
+h2:first-child { margin-top: 0; }
+
+.muted { color: var(--muted); }
+
+/* ------------------------------------------------------------------ top bar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 12px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 5;
+}
+
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-text { display: flex; align-items: baseline; gap: 8px; font-size: 15px; }
+.brand strong { letter-spacing: -0.01em; }
+
+/* A road receding to a horizon — a mark that needs no image file. */
+.mark {
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  background: linear-gradient(160deg, #2b3542, #131922);
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+.mark::after {
+  content: "";
+  position: absolute;
+  left: 50%; bottom: -2px;
+  width: 3px; height: 17px;
+  background: linear-gradient(to top, #ffd45e, rgba(255, 212, 94, 0));
+  transform: translateX(-50%);
+  border-radius: 2px;
+}
+
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+.linkbtn {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.linkbtn:hover { text-decoration: underline; }
+
+.langswitch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line-soft);
+}
+.langswitch button {
+  border: 0;
+  background: transparent;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.langswitch button.active { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); }
+
+/* The summary. Probable and verified are deliberately NOT peers: conflating "the AI
+   found 147" with "147 defects exist" is the fastest way to lose a pilot, so they get
+   different colours and are labelled with what they mean, not with a field name. */
+.counts { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.count {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+  padding: 5px 13px;
+  border-radius: 9px;
+  background: var(--line-soft);
+  min-width: 84px;
+}
+.count b { font-size: 19px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.count span { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+.count.verified { background: #e9f5ec; }
+.count.verified b { color: var(--verified); }
+.count.probable { background: #fdf3e2; }
+.count.probable b { color: var(--probable); }
+.count.rejected b { color: var(--rejected); }
+
+/* ------------------------------------------------------------------ banners */
+
+.banner {
+  padding: 9px 20px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.banner.warn { background: #fff6e8; color: #7a4b00; }
+.banner.warn strong { color: #8a3b00; white-space: nowrap; }
+
+/* ------------------------------------------------------------------- layout */
+
+.layout {
+  display: grid;
+  grid-template-columns: 258px 1fr 352px;
+  gap: 12px;
+  padding: 12px;
+  height: calc(100vh - 57px);
+  align-items: stretch;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.filters label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.filters select {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.filters select:hover { border-color: #cfd5dd; }
+.filters select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.rangelabel { position: relative; }
+#f-confidence-out {
+  position: absolute; right: 0; top: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.filters input[type="range"] {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--accent);
+}
+
+button.ghost {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+button.ghost:hover { background: var(--line-soft); border-color: #cfd5dd; }
+
+.legend { list-style: none; margin: 0; padding: 0; }
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+.legend .swatch { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.legend .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend li.empty { opacity: 0.45; }
+
+.note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+  margin: 22px 0 0;
+}
+
+/* ---------------------------------------------------------------------- map */
+
+.mapwrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: var(--panel);
+}
+#map { position: absolute; inset: 0; }
+
+.maperror {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  padding: 32px;
+  background: var(--panel);
+  z-index: 2;
+}
+.maperror h2 { text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--ink); }
+.maperror p { max-width: 42ch; color: var(--muted); }
+
+.maplibregl-ctrl-group { border-radius: 8px !important; box-shadow: var(--shadow) !important; }
+
+/* ------------------------------------------------------------- detail panel */
+
+.detail-empty { color: var(--muted); text-align: center; padding-top: 42px; }
+.detail-empty h2 { text-transform: none; letter-spacing: 0; font-size: 15px; color: var(--ink-2); }
+.detail-empty p { max-width: 30ch; margin: 0 auto; font-size: 13px; }
+.empty-mark {
+  width: 46px; height: 46px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  border: 2px dashed #cfd5dd;
+  position: relative;
+}
+.empty-mark::after {
+  content: "";
+  position: absolute; inset: 0;
+  margin: auto;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #cfd5dd;
+}
+
+.detail img {
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--line-soft);
+  display: block;
+  margin-top: 14px;
+}
+.detail .noimage {
+  margin-top: 14px;
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--line-soft);
+  border-radius: 9px;
+}
+
+.detail .title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.detail .title .swatch { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+
+.pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pill.verified { background: #e9f5ec; color: var(--verified); }
+.pill.probable { background: #fdf3e2; color: var(--probable); }
+.pill.rejected { background: #eef0f2; color: var(--rejected); }
+
+.facts {
+  margin: 18px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0;
+  font-size: 13px;
+}
+.facts dt,
+.facts dd { padding: 6px 0; border-top: 1px solid var(--line-soft); }
+.facts dt { color: var(--muted); padding-right: 14px; }
+.facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.facts .em { font-weight: 600; }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+.actions button,
+.actions select {
+  padding: 10px;
+  font: inherit;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+}
+.actions button.approve { border-color: #a9dbb8; color: var(--verified); background: #f4fbf6; }
+.actions button.approve:hover { background: #e9f5ec; }
+.actions button.reject { border-color: #eab8b2; color: var(--pothole); background: #fdf6f5; }
+.actions button.reject:hover { background: #fbeae7; }
+.actions select { grid-column: 1 / -1; }
+.actions select:hover { border-color: #cfd5dd; }
+
+.saved { font-size: 12px; color: var(--verified); margin-top: 10px; min-height: 17px; }
+.saved.error { color: var(--pothole); }
+
+/* --------------------------------------------------------------- attribution */
+
+.attribution {
+  padding: 7px 20px 9px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.attribution a { color: inherit; }
+
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .mapwrap { height: 58vh; }
+  .topbar { flex-wrap: wrap; gap: 14px; }
+  .counts { order: 3; width: 100%; }
+}

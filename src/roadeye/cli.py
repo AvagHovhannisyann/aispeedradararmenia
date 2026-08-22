@@ -9,6 +9,7 @@ Commands
 ``process``   run the pipeline over a bundle and store the result
 ``detect``    run a detector over images and draw the boxes
 ``review``    launch the human-in-the-loop review UI
+``dashboard`` launch the municipal dashboard — a map of every defect
 ``redact``    blur people and vehicles out of images
 ``retention`` delete artefacts past their retention period, logging each one
 ``roads``     fetch or import an OpenStreetMap road network
@@ -175,8 +176,12 @@ def _cmd_detect(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_review(args: argparse.Namespace) -> int:
-    """Launch the local review UI."""
+def _serve(args: argparse.Namespace, *, path: str, title: str, hints: list[str]) -> int:
+    """Serve the local web app, whichever page the caller wants first.
+
+    The review screen and the dashboard are two pages of one app, so this is shared
+    rather than duplicated — and both are bound to localhost for the same reason.
+    """
     db_path = Path(args.db)
     if not db_path.exists():
         print(f"No database at {db_path}. Run `roadeye process` first.", file=sys.stderr)
@@ -187,7 +192,7 @@ def _cmd_review(args: argparse.Namespace) -> int:
         from services.api.app import create_app
     except ImportError:
         # services/ is not an installed package, so fall back to a path import. This
-        # keeps the review UI runnable straight from a source checkout.
+        # keeps the web UI runnable straight from a source checkout.
         import sys as _sys
 
         _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -196,25 +201,56 @@ def _cmd_review(args: argparse.Namespace) -> int:
             from services.api.app import create_app
         except ImportError as exc:
             print(
-                f"The review UI needs the 'api' extra: pip install -e '.[api]'  ({exc})",
+                f"The web UI needs the 'api' extra: pip install -e '.[api]'  ({exc})",
                 file=sys.stderr,
             )
             return 1
 
-    app = create_app(db_path, args.evidence)
+    app = create_app(db_path, args.evidence, getattr(args, "roads", None))
     print("=" * 62)
-    print(f"  RoadEye review on port {args.port}")
+    print(f"  {title} on port {args.port}")
     print()
     print("  In a Codespace: click 'Open in Browser' when prompted, or use the")
     print(f"  PORTS tab and the globe icon on port {args.port}.")
-    print(f"  Locally: http://127.0.0.1:{args.port}")
+    print(f"  Locally: http://127.0.0.1:{args.port}{path}")
     print()
-    print("  Keys:  A approve   R reject   1-4 change class   Q/W/E severity")
-    print("         S skip      N note     arrows navigate")
+    for hint in hints:
+        print(f"  {hint}")
     print("=" * 62)
     # Bound to localhost deliberately: there is no authentication and the evidence
     # images may contain identifiable people (docs/SECURITY.md, docs/PRIVACY.md).
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def _cmd_review(args: argparse.Namespace) -> int:
+    """Launch the local review UI."""
+    return _serve(
+        args,
+        path="/",
+        title="RoadEye review",
+        hints=[
+            "Keys:  A approve   R reject   1-4 change class   Q/W/E severity",
+            "       S skip      N note     arrows navigate",
+            "",
+            f"Map view: http://127.0.0.1:{args.port}/dashboard",
+        ],
+    )
+
+
+def _cmd_dashboard(args: argparse.Namespace) -> int:
+    """Launch the municipal dashboard."""
+    return _serve(
+        args,
+        path="/dashboard",
+        title="RoadEye dashboard",
+        hints=[
+            "A map of every defect, filterable, with evidence and review controls.",
+            "The background map needs the internet; the defect data does not.",
+            "",
+            f"Review queue: http://127.0.0.1:{args.port}/",
+        ],
+    )
     return 0
 
 
@@ -621,6 +657,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="bind address; leave as localhost — there is no authentication",
     )
     p.set_defaults(func=_cmd_review)
+
+    p = sub.add_parser(
+        "dashboard",
+        help="launch the municipal dashboard — a map of every defect",
+    )
+    p.add_argument("--db", required=True)
+    p.add_argument("--evidence", help="evidence image directory (default: beside the database)")
+    p.add_argument("--port", type=int, default=8010)
+    p.add_argument(
+        "--roads",
+        help="road network from 'roadeye roads'; draws streets without needing a tile server",
+    )
+    p.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="bind address; leave as localhost — there is no authentication",
+    )
+    p.set_defaults(func=_cmd_dashboard)
 
     p = sub.add_parser("export", help="export defects to CSV / GeoJSON")
     p.add_argument("--db", required=True)
