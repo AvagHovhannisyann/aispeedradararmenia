@@ -57,7 +57,11 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_detector(model_dir: str | None, fake_detections: int):
+def _load_detector(
+    model_dir: str | None,
+    fake_detections: int,
+    score_threshold: float = 0.3,
+):
     """Return a detector, and say plainly which kind it is.
 
     Without ``--model`` this is the fake detector, whose output describes nothing about
@@ -67,7 +71,10 @@ def _load_detector(model_dir: str | None, fake_detections: int):
     if model_dir:
         from roadeye.vision.torchvision_detector import TorchvisionDetector
 
-        detector = TorchvisionDetector.from_registry(model_dir)
+        # The threshold must reach the detector, not just filter its output:
+        # torchvision drops boxes below its own internal threshold first, so a
+        # low --min-confidence applied afterwards would silently do nothing.
+        detector = TorchvisionDetector.from_registry(model_dir, score_threshold=score_threshold)
         metadata_path = Path(model_dir) / "metadata.json"
         if metadata_path.exists():
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -100,7 +107,7 @@ def _cmd_detect(args: argparse.Namespace) -> int:
         print(f"no images found at {args.images}", file=sys.stderr)
         return 1
 
-    detector = _load_detector(args.model, 1)
+    detector = _load_detector(args.model, 1, score_threshold=args.min_confidence)
     if args.limit:
         images = images[: args.limit]
 
@@ -139,7 +146,12 @@ def _cmd_detect(args: argparse.Namespace) -> int:
             annotate_image(path, detections, out_dir / f"{path.stem}.jpg")
 
         if args.verbose:
-            summary = ", ".join(f"{d.damage_class.value} {d.confidence:.2f}" for d in detections)
+            # An undertrained model can emit dozens of boxes per image; printing them
+            # all makes the output unreadable and hides the summary underneath.
+            shown = sorted(detections, key=lambda d: -d.confidence)[:4]
+            summary = ", ".join(f"{d.damage_class.value} {d.confidence:.2f}" for d in shown)
+            if len(detections) > len(shown):
+                summary += f"  (+{len(detections) - len(shown)} more)"
             print(f"{path.name:<28} {summary or '-'}")
 
     print(f"\nmodel            {detector.model_id}")
@@ -161,7 +173,15 @@ def _cmd_process(args: argparse.Namespace) -> int:
     if args.min_confidence is not None:
         config.min_detection_confidence = args.min_confidence
 
-    detector = _load_detector(args.model, args.fake_detections)
+    detector = _load_detector(
+        args.model,
+        args.fake_detections,
+        score_threshold=(
+            args.min_confidence
+            if args.min_confidence is not None
+            else config.min_detection_confidence
+        ),
+    )
 
     db = Database(args.db) if args.db else None
     try:

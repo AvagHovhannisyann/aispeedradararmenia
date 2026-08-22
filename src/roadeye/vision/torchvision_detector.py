@@ -116,6 +116,19 @@ class TorchvisionDetector:
             raise DetectorError(f"weights do not match the model architecture: {exc}") from exc
         self._model.to(self.device).eval()
 
+        # torchvision applies its OWN score threshold (default 0.05) inside roi_heads,
+        # before anything this class sees. Left alone it is a second, hidden threshold:
+        # a caller asking for score_threshold=0.01 would silently still get 0.05-filtered
+        # results and conclude the model found nothing.
+        #
+        # This was not hypothetical — it masked an undertrained model whose top score
+        # was 0.037, making it look like the detector returned nothing at all rather
+        # than returning weak detections. Point both at the same number so the
+        # threshold the caller sets is the threshold that applies.
+        self._model.roi_heads.score_thresh = min(
+            self._model.roi_heads.score_thresh, score_threshold
+        )
+
         self._model_id = model_id or checkpoint.get("model_id") or self.weights_path.stem
 
     @property

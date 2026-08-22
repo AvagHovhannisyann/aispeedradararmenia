@@ -156,3 +156,34 @@ class TestModel:
         torch.save({"model_state_dict": {"bogus.weight": torch.zeros(3)}}, tmp_path / "w.pt")
         with pytest.raises(DetectorError, match="do not match"):
             TorchvisionDetector(tmp_path / "w.pt")
+
+
+@requires_torch
+class TestThresholdIsNotShadowed:
+    """Regression: torchvision's internal score_thresh must not shadow the caller's.
+
+    torchvision's roi_heads applies its own threshold (default 0.05) before the adapter
+    sees any output. Left alone, asking for score_threshold=0.01 silently returns
+    0.05-filtered results — which is how an undertrained model whose best score was
+    0.037 looked like a model returning nothing at all.
+    """
+
+    def test_low_threshold_lowers_the_internal_one(self, tiny_model_dir):
+        detector = TorchvisionDetector.from_registry(tiny_model_dir, score_threshold=0.001)
+        assert detector._model.roi_heads.score_thresh <= 0.001
+
+    def test_high_threshold_does_not_raise_the_internal_one(self, tiny_model_dir):
+        """Raising it would be a silent optimisation that changes recall; the adapter
+        filters high thresholds itself, so the internal one only ever moves down."""
+        detector = TorchvisionDetector.from_registry(tiny_model_dir, score_threshold=0.9)
+        assert detector._model.roi_heads.score_thresh <= 0.05
+
+    def test_lower_threshold_never_returns_fewer_detections(self, tiny_model_dir):
+        import numpy as np
+
+        pixels = np.random.default_rng(0).integers(0, 255, (128, 128, 3), dtype=np.uint8)
+        frame = FrameImage(frame_id="f", width=128, height=128, pixels=pixels)
+
+        loose = TorchvisionDetector.from_registry(tiny_model_dir, score_threshold=0.001)
+        strict = TorchvisionDetector.from_registry(tiny_model_dir, score_threshold=0.5)
+        assert len(loose.predict(frame)) >= len(strict.predict(frame))
