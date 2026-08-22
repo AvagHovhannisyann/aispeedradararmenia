@@ -57,20 +57,111 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_detector(model_dir: str | None, fake_detections: int):
+    """Return a detector, and say plainly which kind it is.
+
+    Without ``--model`` this is the fake detector, whose output describes nothing about
+    any real road. That warning is not boilerplate: synthetic markers on a real map of
+    Yerevan look exactly like a working product.
+    """
+    if model_dir:
+        from roadeye.vision.torchvision_detector import TorchvisionDetector
+
+        detector = TorchvisionDetector.from_registry(model_dir)
+        metadata_path = Path(model_dir) / "metadata.json"
+        if metadata_path.exists():
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not metadata.get("distribution_allowed", False):
+                print(
+                    f"NOTE: model '{detector.model_id}' is marked non-distributable "
+                    "(disputed training-data licence). Internal evaluation only — see "
+                    "docs/LICENSE_AUDIT.md.",
+                    file=sys.stderr,
+                )
+            if metadata.get("warning"):
+                print(f"NOTE: {metadata['warning']}", file=sys.stderr)
+        return detector
+
+    print(
+        "WARNING: no --model given, so the FAKE detector is being used. Its output is "
+        "synthetic and describes nothing about any real road.",
+        file=sys.stderr,
+    )
+    return FakeDetector(detections_per_frame=fake_detections)
+
+
+def _cmd_detect(args: argparse.Namespace) -> int:
+    """Run a detector over images and report — and optionally draw — what it finds."""
+    from roadeye.vision.annotate import annotate_image, iter_images, load_image_array
+    from roadeye.vision.base import FrameImage
+
+    images = iter_images(args.images)
+    if not images:
+        print(f"no images found at {args.images}", file=sys.stderr)
+        return 1
+
+    detector = _load_detector(args.model, 1)
+    if args.limit:
+        images = images[: args.limit]
+
+    out_dir = Path(args.output) if args.output else None
+    totals: dict[str, int] = {}
+    with_detections = 0
+    records = []
+
+    for path in images:
+        pixels = load_image_array(path)
+        frame = FrameImage(
+            frame_id=path.stem, width=pixels.shape[1], height=pixels.shape[0], pixels=pixels
+        )
+        detections = [d for d in detector.predict(frame) if d.confidence >= args.min_confidence]
+
+        if detections:
+            with_detections += 1
+        for det in detections:
+            totals[det.damage_class.value] = totals.get(det.damage_class.value, 0) + 1
+
+        records.append(
+            {
+                "image": str(path),
+                "detections": [
+                    {
+                        "class": d.damage_class.value,
+                        "confidence": round(d.confidence, 4),
+                        "box": [round(d.x1, 1), round(d.y1, 1), round(d.x2, 1), round(d.y2, 1)],
+                    }
+                    for d in detections
+                ],
+            }
+        )
+
+        if out_dir is not None and (detections or not args.only_detections):
+            annotate_image(path, detections, out_dir / f"{path.stem}.jpg")
+
+        if args.verbose:
+            summary = ", ".join(f"{d.damage_class.value} {d.confidence:.2f}" for d in detections)
+            print(f"{path.name:<28} {summary or '-'}")
+
+    print(f"\nmodel            {detector.model_id}")
+    print(f"images           {len(images)}")
+    print(f"with detections  {with_detections} ({with_detections / len(images) * 100:.0f}%)")
+    print(f"detections       {sum(totals.values())}")
+    for cls, count in sorted(totals.items(), key=lambda kv: -kv[1]):
+        print(f"  {cls:<22} {count}")
+    if out_dir is not None:
+        print(f"\nannotated images written to {out_dir}/")
+    if args.json:
+        Path(args.json).write_text(json.dumps(records, indent=2), encoding="utf-8")
+        print(f"wrote {args.json}")
+    return 0
+
+
 def _cmd_process(args: argparse.Namespace) -> int:
     config = PipelineConfig()
     if args.min_confidence is not None:
         config.min_detection_confidence = args.min_confidence
 
-    # The default detector is FAKE. Real detectors arrive at M3; until then this
-    # command exercises the pipeline, and saying so loudly prevents anyone mistaking
-    # its output for a road survey.
-    detector = FakeDetector(detections_per_frame=args.fake_detections)
-    print(
-        "WARNING: using the fake detector. Output is synthetic and describes nothing "
-        "about any real road.",
-        file=sys.stderr,
-    )
+    detector = _load_detector(args.model, args.fake_detections)
 
     db = Database(args.db) if args.db else None
     try:
@@ -166,10 +257,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("bundle", help="path to a survey bundle directory")
     p.set_defaults(func=_cmd_validate)
 
+    p = sub.add_parser("detect", help="run a detector over images and draw the results")
+    p.add_argument("images", help="an image file or a directory of images")
+    p.add_argument("--model", help="model directory containing metadata.json and weights.pt")
+    p.add_argument("--output", help="directory to write annotated copies into")
+    p.add_argument("--json", help="write per-image detections to this JSON file")
+    p.add_argument("--min-confidence", type=float, default=0.3)
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--verbose", action="store_true", help="print every image")
+    p.add_argument(
+        "--only-detections",
+        action="store_true",
+        help="write annotated copies only for images with at least one detection",
+    )
+    p.set_defaults(func=_cmd_detect)
+
     p = sub.add_parser("process", help="run the pipeline over a survey bundle")
     p.add_argument("bundle")
     p.add_argument("--db", help="SQLite database to write results into")
     p.add_argument("--json", help="write the run summary to this JSON file")
+    p.add_argument("--model", help="model directory; omit to use the FAKE detector")
     p.add_argument("--min-confidence", type=float, default=None)
     p.add_argument(
         "--fake-detections",
