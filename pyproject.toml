@@ -38,8 +38,13 @@ review = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pillow>=10", "numpy>=1.2
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
-    "ruff>=0.4",
-    "mypy>=1.9",
+    # Lint and type-check versions are bounded, not open-ended. Both add new rules in
+    # ordinary releases, so `>=0.4` meant CI could turn red on a morning when nobody
+    # changed anything — and a build that fails for reasons unrelated to the change is a
+    # build people learn to ignore. Bump these deliberately, in their own commit, so the
+    # new findings are read rather than skipped past.
+    "ruff>=0.16,<0.17",
+    "mypy>=2.3,<3",
     # fastapi's TestClient needs an HTTP client to drive the app in-process.
     "httpx",
 ]
@@ -83,7 +88,18 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+# `python_version` is deliberately NOT pinned to 3.11.
+#
+# It was, and CI's first run found what that costs. mypy applies the target version to
+# every file it parses, including third-party stubs — and numpy 2.5's `__init__.pyi` uses
+# a PEP 695 `type` statement, so mypy pinned to 3.11 rejects numpy's own stub and stops:
+#
+#   numpy/__init__.pyi:737: error: Type statement is only supported in Python 3.12 and
+#   greater  [syntax]
+#
+# Without the pin mypy follows the interpreter, and the floor is still enforced — better
+# than before, in fact. CI runs the tests on 3.11, where 3.12+ syntax is an ImportError
+# at collection, which is a harder failure than a type error and arrives sooner.
 warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true

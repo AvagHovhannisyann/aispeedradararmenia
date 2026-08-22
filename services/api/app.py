@@ -131,10 +131,10 @@ def create_app(
         # "SQLite objects created in a thread can only be used in that same thread".
         return Database(db_path)
 
-    def _static(name: str, media_type: str) -> FileResponse:
-        path = STATIC_DIR / name
+    def _static(relative: str, media_type: str) -> FileResponse:
+        path = STATIC_DIR / relative
         if not path.is_file():  # pragma: no cover - packaging error
-            raise HTTPException(status_code=500, detail=f"{name} is missing")
+            raise HTTPException(status_code=500, detail=f"{relative} is missing")
         return FileResponse(path, media_type=media_type)
 
     @app.get("/", response_class=HTMLResponse)
@@ -150,20 +150,26 @@ def create_app(
 
     @app.get("/static/{name}")
     def static_asset(name: str) -> FileResponse:
-        """Serve the dashboard's CSS and JS.
+        """Serve the dashboard's CSS and JS, and the vendored map library.
 
         Whitelisted by name rather than mounted as a directory: this app also serves an
         evidence directory of survey imagery, and a static mount is one misconfiguration
-        away from serving the wrong tree.
+        away from serving the wrong tree. The paths below are constants in this file, so
+        the request never supplies part of a path — only a key that must match exactly.
         """
         allowed = {
-            "dashboard.css": "text/css",
-            "dashboard.js": "application/javascript",
+            "dashboard.css": ("dashboard.css", "text/css"),
+            "dashboard.js": ("dashboard.js", "application/javascript"),
+            # Third-party, kept under vendor/ so what is ours and what is not stays
+            # obvious at a glance. MapLibre is BSD-3-Clause; the licence text ships
+            # beside it, as that licence requires of a redistribution.
+            "maplibre-gl.css": ("vendor/maplibre-gl.css", "text/css"),
+            "maplibre-gl.js": ("vendor/maplibre-gl.js", "application/javascript"),
         }
-        media_type = allowed.get(name)
-        if media_type is None:
+        entry = allowed.get(name)
+        if entry is None:
             raise HTTPException(status_code=404, detail="no such asset")
-        return _static(name, media_type)
+        return _static(*entry)
 
     @app.get("/api/queue")
     def queue(
@@ -415,6 +421,32 @@ def create_app(
             "features": features,
             "attribution": network.attribution,
         }
+
+    @app.get("/api/streets")
+    def streets(limit: int = Query(default=200, ge=1, le=5000)) -> dict[str, Any]:
+        """Defects rolled up per stretch of road, with how much of each was driven.
+
+        Empty when no road network is configured — the rollup is a statement about
+        streets, and without geometry there are no streets to make it about.
+        """
+        if roads_path is None or not Path(roads_path).is_file():
+            return {"streets": [], "available": False}
+
+        from roadeye.map_matching.network import RoadNetwork
+        from roadeye.reporting.segments import build_street_report
+
+        network = RoadNetwork.load(roads_path)
+        with _db() as db:
+            report = build_street_report(db.list_defects(), db.survey_frames(), network)
+
+        payload = report.to_json()
+        payload["available"] = True
+        # Densest first: a work plan is read from the top.
+        payload["streets"] = sorted(
+            (s for s in payload["streets"] if s["state"] != "not_surveyed"),
+            key=lambda s: (-(s["defects_per_100m"] or 0), -s["outstanding"]),
+        )[:limit]
+        return payload
 
     @app.get("/api/stats")
     def stats() -> dict[str, Any]:

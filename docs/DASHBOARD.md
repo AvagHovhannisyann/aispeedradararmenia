@@ -21,6 +21,13 @@ Every user-facing string lives in one `STRINGS` table in `dashboard.js`, so a
 translation error is a one-line fix rather than a hunt through markup. The choice is
 remembered per browser.
 
+The lookup falls back to English when a key is missing, which is right on screen — an
+English word beats a raw `coverageOf` — and dangerous in a repository, because it is
+silent. Add a key to `en`, forget `hy`, and the Armenian interface starts serving English
+to the one reader it exists for, with nothing on the page to say so. So the two tables are
+checked against each other by `tests/unit/test_dashboard_strings.py`: no browser, no npm,
+just the two sets of keys.
+
 This reaches into the API too. Provenance warnings are returned as **codes with
 parameters**, never as prose:
 
@@ -75,8 +82,25 @@ that is not a licence detail to be discovered later.
 
 So the basemap is **off by default**. Street context comes instead from the road network
 `roadeye roads` already downloaded for map matching — the same ODbL data, held locally,
-drawn as lines. The dashboard therefore works on a laptop with no internet at all, which
-is what offline-first is supposed to mean.
+drawn as lines. No tile server is contacted, and none needs to be.
+
+**MapLibre itself is vendored**, under `services/api/static/vendor/`, with its BSD-3
+licence text beside it and its SHA-256 recorded. So the dashboard genuinely works on a
+laptop with no internet at all, which is what offline-first is supposed to mean.
+
+It was loaded from unpkg until an amendment to
+[ADR-010](DECISIONS/ADR-010-dashboard-without-a-build-step.md) reversed that. Three
+reasons: a municipal network will likely block an unfamiliar CDN, so the failure mode was
+a working dashboard here and a grey rectangle in the meeting; offline-first was otherwise
+a slogan with a hole in the middle; and it meant executing third-party JavaScript fetched
+at view time from a host we do not control, on a page showing survey imagery that may
+contain identifiable people.
+
+The claim is checked rather than trusted. `tests/unit/test_dashboard_assets.py` fails if
+any page loads a script, stylesheet or image from a remote host — a one-line CDN tag works
+perfectly on the machine of whoever adds it, so nothing else would catch it. The page was
+then loaded in a real browser with **every** request outside `127.0.0.1` aborted: the map
+rendered, and zero requests were blocked because none were made.
 
 `?tiles=1` turns the OSM raster basemap on for local use, and the attribution bar then
 says plainly what it is.
@@ -102,6 +126,75 @@ Review controls hit the same endpoint the keyboard review screen uses, so a deci
 here is the same append-only record with the same invariants. The dashboard is a second
 door onto one review loop, not a parallel one.
 
+## Streets, not just pins
+
+A city does not fix one pothole. It resurfaces a length of street, and it budgets by that
+length — so the sidebar rolls defects up per stretch of road, densest first, and
+`roadeye streets` prints the same thing.
+
+```bash
+roadeye streets --db yerevan.db --roads data/roads/yerevan.json.gz
+roadeye streets --db yerevan.db --roads ... --worst 10     # the ten worst stretches
+roadeye streets --db yerevan.db --roads ... --all          # including never-driven ones
+```
+
+### Coverage comes from the frames, not the defects
+
+This is the point of the whole feature, and it is a distinction a naive rollup destroys.
+
+*"No defects found on Teryan Street"* and *"we have never driven Teryan Street"* are
+opposite claims. A rollup built only from defects cannot tell them apart — both produce
+an absent row — and a reader taking one for the other has been misled by the report's
+**structure**, which is worse than a wrong number because there is nothing on the page to
+disagree with.
+
+So surveyed length is measured from where the camera actually went, and every stretch
+falls into one of three stated states:
+
+| Driven | Defects | State | Means |
+|---|---|---|---|
+| > 0 | > 0 | `defects` | Found this many, over this distance |
+| > 0 | 0 | `clean` | **Driven and clean** |
+| 0 | — | `not_surveyed` | **Never driven.** Not a claim about the road at all |
+
+The denominator is always reported, even when unsurveyed rows are hidden: *"2.39 km of
+the network's 2.4 km (99.6%)"*. Without it, four busy streets read as a survey of the
+city when they may be four streets out of eleven hundred.
+
+### Coverage is not distance driven
+
+They come apart in two ordinary ways, and both were bugs here before they were rules.
+
+Driving one 400 m street twice is **800 m driven and 400 m of street**. Driving 3 km down
+a motorway outside the extract is 3 km driven and **none** of this network. Divide total
+distance by network length and either one reports a city as surveyed on the strength of a
+drive that never touched most of it — a percentage that can exceed 100% and a report a
+municipality is right to stop believing.
+
+So the numerator is metres of network inspected: per street, driven length capped at that
+street's own length; off-network driving contributes nothing. Both other figures are still
+reported — `surveyed_m` for what was driven, `unmatched_m` for what was driven off the
+network — because a rollup that hides distance is as bad as one that inflates it. The
+`roadeye streets` table shows **driven** and **length** side by side for the same reason.
+
+### Three more rules
+
+**Density is `None`, never zero, below 50 m of coverage.** Two defects in 8 m is not 25
+per 100 m; it is an unusable sample, and the report says so rather than computing
+something. `worst()` ranks only stretches long enough to rate, because putting a 10 m
+sample above a 2 km one puts noise at the top of a work plan.
+
+**Rejected defects are counted and excluded from the work.** A human saying "that was a
+shadow" is the only judgement in the system that is not a guess; throwing it back into
+the total would waste it.
+
+**A gap larger than 60 m between frames is a break, not driving.** A tunnel, a signal
+loss or a stopped app leaves a hole, and bridging it would claim to have inspected road
+nobody drove past.
+
+Defects that match no street are counted as `unmatched_defects` rather than dropped — a
+rollup silently missing a tenth of the defects is not one to budget from.
+
 ## Rejected defects stay on the map
 
 Faded, not removed. Removing them would hide the reviewer's own work — and *"we checked
@@ -120,6 +213,7 @@ that should overturn it, are in
 | `GET /static/{name}` | Its CSS and JS — whitelisted by name, never a directory mount |
 | `GET /api/map` | Defects as GeoJSON, filtered, plus summary, surveys and provenance |
 | `GET /api/roads` | The local road network as lines, or an empty collection |
+| `GET /api/streets` | Defects per stretch, with driven length and network coverage |
 | `GET /api/evidence/{file}` | One evidence image, path-traversal guarded |
 | `POST /api/defects/{id}/review` | A human decision — shared with the review screen |
 
@@ -150,9 +244,6 @@ element given both `hidden` and a display rule does not reintroduce it.
   to a network — the evidence images may contain identifiable people (`docs/SECURITY.md`,
   `docs/PRIVACY.md`). Hosting this for a municipality's own staff is a different security
   posture and a different piece of work.
-- **Segment-level aggregation.** *"This 200 m of Abovyan has 14 defects"* is what a road
-  maintenance budget is actually built from. Map matching (M5) is the prerequisite and is
-  done; this is the natural next step.
 - **Trend across surveys.** The data model carries `first_seen`, `last_seen` and
   `DefectTrend` already; nothing draws them yet, and nothing can until there are two
   surveys of one street.

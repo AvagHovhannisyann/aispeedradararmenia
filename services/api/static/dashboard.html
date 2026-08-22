@@ -18,7 +18,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoadEye</title>
-<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<link href="/static/maplibre-gl.css" rel="stylesheet">
 <link href="/static/dashboard.css" rel="stylesheet">
 </head>
 <body>
@@ -93,6 +93,9 @@
     <h2 data-i18n="legend"></h2>
     <ul class="legend" id="legend"></ul>
 
+    <h2 data-i18n="streets"></h2>
+    <div id="streets" class="streets"></div>
+
     <p class="note" data-i18n="ringNote"></p>
   </aside>
 
@@ -116,7 +119,9 @@
 
 <footer class="attribution" id="attribution"></footer>
 
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<!-- Vendored, not fetched: this page must draw a map on a municipal laptop with no
+     internet and no route to a CDN. See services/api/static/vendor/README.md. -->
+<script src="/static/maplibre-gl.js"></script>
 <script src="/static/dashboard.js"></script>
 </body>
 </html>

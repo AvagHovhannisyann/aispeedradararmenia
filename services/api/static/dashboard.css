@@ -255,6 +255,27 @@ button.ghost:hover { background: var(--line-soft); border-color: #cfd5dd; }
 .legend .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .legend li.empty { opacity: 0.45; }
 
+.streets { font-size: 12.5px; }
+.streets .row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.streets .row:first-child { border-top: 0; }
+.streets .nm { font-weight: 600; }
+.streets .den { font-variant-numeric: tabular-nums; color: var(--pothole); font-weight: 600; }
+.streets .sub { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; }
+.streets .coverage {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
 .note {
   font-size: 12px;
   line-height: 1.5;

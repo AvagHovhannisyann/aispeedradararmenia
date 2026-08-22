@@ -13,6 +13,7 @@ Commands
 ``redact``    blur people and vehicles out of images
 ``retention`` delete artefacts past their retention period, logging each one
 ``roads``     fetch or import an OpenStreetMap road network
+``streets``   roll defects up per stretch of road, with how much was driven
 ``match-roads``     assign stored defects to road segments
 ``export``    write defects to CSV / GeoJSON
 ``export-dataset``  turn reviewed defects into training data
@@ -541,6 +542,50 @@ def _cmd_match_roads(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_streets(args: argparse.Namespace) -> int:
+    """Roll defects up to the stretch of road they are on."""
+    from roadeye.map_matching.network import RoadNetwork
+    from roadeye.reporting.segments import build_street_report
+
+    network = RoadNetwork.load(args.roads)
+    with Database(args.db) as db:
+        report = build_street_report(
+            db.list_defects(), db.survey_frames(), network, include_unsurveyed=args.all
+        )
+
+    print(report.summary())
+
+    rows = [s for s in report.streets if s.surveyed] if not args.all else report.streets
+    if args.worst:
+        rows = report.worst(args.worst)
+
+    if rows:
+        # "driven" and "length" are different questions: driving a 400 m street twice is
+        # 800 m driven and still 400 m of street. Showing both stops the first number
+        # being read as the second.
+        print(f"\n{'street':<34}{'driven':>9}{'length':>9}{'defects':>9}{'per 100m':>10}  state")
+        for street in rows:
+            density = street.defects_per_100m
+            print(
+                f"{(street.name or street.way_id)[:33]:<34}"
+                f"{street.surveyed_m:>8.0f}m"
+                f"{street.length_m:>8.0f}m"
+                f"{street.outstanding:>9}"
+                f"{('—' if density is None else f'{density:.1f}'):>10}  "
+                f"{street.state}"
+            )
+
+    print(
+        "\nDriven length is measured from the camera's own track. A street with no "
+        "defects\nand no driven length was never surveyed — that is not a statement "
+        "about the road."
+    )
+    if args.json:
+        Path(args.json).write_text(json.dumps(report.to_json(), indent=2), encoding="utf-8")
+        print(f"\nwrote {args.json}")
+    return 0
+
+
 def _cmd_stats(args: argparse.Namespace) -> int:
     with Database(args.db) as db:
         defects = db.list_defects()
@@ -783,6 +828,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="report what would change without writing to the database",
     )
     p.set_defaults(func=_cmd_match_roads)
+
+    p = sub.add_parser(
+        "streets",
+        help="roll defects up per stretch of road, with how much of each was driven",
+    )
+    p.add_argument("--db", required=True)
+    p.add_argument("--roads", required=True, help="road network from 'roadeye roads'")
+    p.add_argument("--worst", type=int, help="show only the N densest stretches")
+    p.add_argument(
+        "--all",
+        action="store_true",
+        help="include stretches that were never driven (normally hidden)",
+    )
+    p.add_argument("--json", help="write the full report here")
+    p.set_defaults(func=_cmd_streets)
 
     p = sub.add_parser("stats", help="summarise a database")
     p.add_argument("--db", required=True)

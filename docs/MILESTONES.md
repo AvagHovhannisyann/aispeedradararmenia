@@ -145,6 +145,8 @@ somebody has produced an image with somebody in it (`docs/PRIVACY.md`).*
 - [x] Uncertainty drawn as a ring in **metres**, so a pin never implies precision
 - [x] Streets drawn from the local road network, so no tile server is required
 - [x] Provenance banner: synthetic output declares itself
+- [x] **Per-street rollup** (`roadeye streets`) with coverage measured from the camera
+      track, so "driven and clean" and "never driven" can never be confused
 
 Built without React or a build step — [ADR-010](DECISIONS/ADR-010-dashboard-without-a-build-step.md).
 

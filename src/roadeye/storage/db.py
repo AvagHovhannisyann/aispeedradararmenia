@@ -25,7 +25,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from roadeye.domain.enums import DamageClass, DefectStatus, LocationMethod, Severity, SeveritySource
+from roadeye.domain.enums import (
+    DamageClass,
+    DefectStatus,
+    FrameQuality,
+    LocationMethod,
+    Severity,
+    SeveritySource,
+)
 from roadeye.domain.models import (
     BoundingBox,
     Defect,
@@ -718,6 +725,61 @@ class Database:
             )
             for r in cur
         ]
+
+    def survey_frames(self, survey_id: str | None = None) -> list[Frame]:
+        """Frames that have a position, in time order.
+
+        Written since M2 and never read back until now. Coverage needs them: how much of
+        a street was *driven* is a property of where the camera went, and cannot be
+        recovered from the defects — a street with no defects and no frames was never
+        surveyed, while a street with no defects and five hundred frames is clean. Those
+        are opposite claims.
+        """
+        # A position with no stated uncertainty is not a usable position (rule 7). The
+        # write path cannot produce one — GeoPoint requires the field — so this only
+        # excludes rows some other tool put in the file.
+        sql = (
+            "SELECT * FROM frames WHERE obs_lat IS NOT NULL AND obs_lon IS NOT NULL "
+            "AND obs_uncertainty_m IS NOT NULL"
+        )
+        params: list[Any] = []
+        if survey_id is not None:
+            sql += " AND survey_id = ?"
+            params.append(survey_id)
+        sql += " ORDER BY survey_id, t_epoch_ms, video_time_s"
+        return [self._row_to_frame(r) for r in self._conn.execute(sql, params)]
+
+    @staticmethod
+    def _row_to_frame(row: sqlite3.Row) -> Frame:
+        location = None
+        # All three or none. Defaulting a missing uncertainty to 0.0 would read back as
+        # a perfectly located camera, which is the one thing this system may never say —
+        # a frame we cannot place is dropped, not invented.
+        if (
+            row["obs_lat"] is not None
+            and row["obs_lon"] is not None
+            and row["obs_uncertainty_m"] is not None
+        ):
+            location = GeoPoint(
+                lat=row["obs_lat"],
+                lon=row["obs_lon"],
+                method=LocationMethod(row["obs_method"] or LocationMethod.PHONE_GPS.value),
+                uncertainty_m=row["obs_uncertainty_m"],
+            )
+        return Frame(
+            frame_id=row["frame_id"],
+            survey_id=row["survey_id"],
+            video_time_s=row["video_time_s"],
+            t_epoch_ms=row["t_epoch_ms"],
+            width=row["width"],
+            height=row["height"],
+            image_path=row["image_path"],
+            observation_location=location,
+            speed_mps=row["speed_mps"],
+            heading_deg=row["heading_deg"],
+            quality=FrameQuality(row["quality"]),
+            quality_scores=json.loads(row["quality_scores_json"] or "{}"),
+        )
 
     def representative_headings(self) -> dict[str, float]:
         """``defect_id`` -> vehicle heading at its representative frame, where known.
