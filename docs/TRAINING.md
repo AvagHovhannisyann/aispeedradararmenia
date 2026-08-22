@@ -56,6 +56,73 @@ fetch_country("Czech", "data/datasets/rdd2022_czech", limit=900)
 
 `limit` caps the image count, which is how you try the whole chain in under a minute.
 
+## Measured result: the first bootstrap run failed
+
+Recorded here because an unrecorded failure gets repeated, and because nobody should
+pick up this repository assuming the bundled model works. **It does not.**
+
+**Run:** `rdd_bootstrap_v001` — 630 Czech training images, 3 epochs, batch 4, 384 px,
+SGD lr 0.005, CPU, 35 minutes.
+
+| Epoch | Mean loss |
+|---:|---:|
+| 1 | 0.1767 |
+| 2 | 0.0911 |
+| 3 | 0.0910 |
+
+**Evaluation on the held-out test split** (135 images, 92 ground-truth defects,
+IoU 0.5, score threshold 0.05):
+
+```
+class                  GT  pred   TP   FP   FN   prec    rec     F1     AP
+alligator_crack         8     0    0    0    8      -  0.000      -  0.000
+longitudinal_crack     46     0    0    0   46      -  0.000      -  0.000
+pothole                16     0    0    0   16      -  0.000      -  0.000
+transverse_crack       22     0    0    0   22      -  0.000      -  0.000
+                                                    mAP@0.5  0.000
+```
+
+**Zero detections. F1 = 0. The detector detects nothing.**
+
+### Diagnosis
+
+The model collapsed to the trivial solution: predict background everywhere.
+
+Two measurements support that rather than a plumbing fault. The loss **plateaued**
+between epochs 2 and 3 (0.0911 → 0.0910) — it had settled into a minimum. And the
+maximum raw confidence *fell* as training progressed:
+
+| After | Max raw score on held-out images |
+|---|---:|
+| Epoch 1 | 0.037 |
+| Epoch 3 | 0.010 |
+
+It became more confident that nothing is there. That is what "predict background" looks
+like from the outside.
+
+Why it happened: 543 boxes across 900 images, of which **562 images contain no damage
+at all**. With positives that sparse and only 3 epochs, "detect nothing" is a strong
+local minimum — it scores well on 62% of the data immediately.
+
+### What should fix it, in order
+
+1. **Train far longer.** Three epochs is nothing for detection. 30-50 on a GPU.
+2. **More data.** Use Japan (1.07 GB, the largest well-annotated windscreen set) rather
+   than Czech, and do not cap `limit`.
+3. **Rebalance early training.** `RoadDamageDataset(..., drop_negatives=True)` for the
+   first epochs gets the model past the trivial minimum, then reintroduce negatives —
+   they are essential for precision (`docs/ML_STRATEGY.md`), just harmful as 62% of a
+   tiny dataset at the very start.
+4. **Lower the learning rate** to 0.001-0.002 if collapse recurs.
+
+None of these need new code — they are flags on the existing script.
+
+### Why this is recorded rather than quietly retried
+
+`CLAUDE.md` forbids claiming performance without measurement. The measurement says
+zero. Publishing the zero is the same discipline as publishing a good number would be,
+and it establishes the baseline that the next run has to beat.
+
 ## Where to actually train
 
 **Not on a laptop CPU.** For calibration, measured on this project's 4-core CPU
