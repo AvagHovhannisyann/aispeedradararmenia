@@ -1,5 +1,7 @@
 # RoadEye
 
+[![CI](https://github.com/AvagHovhannisyann/aispeedradararmenia/actions/workflows/ci.yml/badge.svg)](https://github.com/AvagHovhannisyann/aispeedradararmenia/actions/workflows/ci.yml)
+
 Smartphone-based road inspection. Mount an ordinary phone in a car, drive, and get a map
 of probable road defects — each one traceable back to the frame, the model and the
 configuration that produced it.
@@ -14,7 +16,7 @@ Built for Armenian municipalities, on a zero software budget.
 
 | Component | State |
 |---|---|
-| Processing core | Implemented — 489 tests, no GPU/ffmpeg/network needed |
+| Processing core | Implemented — 509 tests, no GPU/ffmpeg/network needed |
 | Survey collector (Expo) | Scaffolded, **never run on a device** — but its bundle logic is tested |
 | Road-damage detector | Adapter + training pipeline built. Bootstrap model trained on **Czech** data only — not an Armenian detector |
 | Armenian dataset | **None** |

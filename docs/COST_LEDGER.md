@@ -32,9 +32,18 @@ small and scales with how much data you want.
 | **Kaggle GPU** | ~30 GPU-h/week, commonly P100 16 GB | Training slows to local CPU |
 | **Google Colab** | **No guaranteed GPU.** Limits, idle timeout, max VM lifetime and GPU types all "vary over time" and are unpublished; sessions cap ~12 h | Backup only |
 | GitHub free tier | Repo + Actions minutes | Low |
+| **GitHub Actions** | **Unlimited minutes — the repository is public.** A private repo would fall back to 2,000 minutes/month | Low. The same four gates run locally in ~20 s; CI is the thing that remembers, not the thing that knows |
 
 **Rule:** these are development resources with **no SLA**. Nothing in production may
 depend on them; training scripts must checkpoint and resume, because eviction is normal.
+
+**The public-repository trade, stated once.** Actions is free here because the repository
+is public. That is a real decision and not only a billing one: every architectural choice,
+threshold and licence finding in this project is world-readable, and the `Proprietary`
+licence restricts *use*, not *reading*. It also raises the cost of a mistake — a survey
+frame committed to a public repository is a published frame, which is why
+`scripts/check_no_survey_data.py` runs on every push. Going private costs $0 on the Free
+plan and would cap Actions at 2,000 minutes/month, which is far more than this uses.
 
 **Privacy rule:** raw Armenian survey video must never be uploaded to them
 (`PRIVACY.md`).

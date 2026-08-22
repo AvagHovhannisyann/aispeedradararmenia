@@ -17,8 +17,8 @@ licence. See `docs/LICENSE_AUDIT.md`.
 |---|---|---|---|
 | **pydantic** | ≥2.5,<3 | MIT | Only hard runtime dependency |
 
-That is the entire required dependency set. The processing core, its CLI and 369 of its
-489 tests run on Python's standard library plus pydantic — verified by
+That is the entire required dependency set. The processing core, its CLI and 389 of its
+509 tests run on Python's standard library plus pydantic — verified by
 `scripts/bare_install_plugin.py`, not assumed. Map matching added no dependency: OSM XML
 is parsed with `xml.etree`, Overpass with `json` and `urllib`, and the road-network file
 is `gzip` + `json`.
@@ -44,6 +44,21 @@ PyAV bundles/links FFmpeg, which is **LGPL-2.1+ or GPL-2+ depending on build opt
 It is an optional extra invoked as a library for decoding only. Before distributing any
 bundled artefact that includes it, confirm the FFmpeg build configuration — a GPL build
 would impose obligations an LGPL build does not.
+
+## CI actions
+
+Not shipped in the product, but third-party code that runs in our build and can see the
+repository, so rule 11 applies to it too.
+
+| Action | Licence |
+|---|---|
+| `actions/checkout@v4` | MIT |
+| `actions/setup-python@v5` | MIT |
+| `actions/setup-node@v4` | MIT |
+
+All three are published by GitHub. The workflow grants `contents: read` and nothing else —
+no action here needs write access to anything, and a token that cannot push is a token
+that cannot be turned against the repository.
 
 ## Collector app (not yet installed)
 

@@ -1,0 +1,123 @@
+# RoadEye CI.
+#
+# CLAUDE.md states four things that "must" hold — the suite passes with no GPU, ffmpeg or
+# network; most of it needs no optional dependency at all; ruff and mypy are clean; and no
+# survey data is ever committed. Until this file existed, all four were enforced by
+# somebody remembering to run them, which is the same failure the bare-install plugin was
+# written to catch: a claim nobody checks stops being true and nothing says so.
+#
+# Cost: GitHub Actions is free with unlimited minutes on public repositories, which this
+# is. Recorded in docs/COST_LEDGER.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The full gate, on the oldest and newest Python the project claims to support. 3.11 is
+  # the floor in pyproject.toml; if it breaks, the stated requires-python is a lie.
+  gates:
+    name: tests, lint and types (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      # CPU wheels explicitly. The default PyPI torch for Linux bundles CUDA and is
+      # gigabytes; nothing here has a GPU and nothing here should wait for one.
+      #
+      # torch is installed for a reason beyond the detector tests: mypy has
+      # `ignore_missing_imports`, so without torch present it types every tensor as Any
+      # and ml/ stops being checked at exactly the point it most needs to be.
+      - name: Install torch (CPU)
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install
+        run: pip install -e '.[dev,api,review,quality]'
+
+      # PyAV is deliberately absent: its tests need a real video file as well as the
+      # library, so they skip either way. Decoding is exercised locally, not here.
+      - name: Tests
+        run: python -m pytest
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format
+        run: ruff format --check .
+
+      - name: Types
+        run: mypy
+
+  # The claim that the core runs on pydantic alone, checked for real rather than
+  # simulated. `scripts/bare_install_plugin.py` reproduces this in 3 s locally; this job
+  # is the version with nothing up its sleeve — a machine that genuinely never installed
+  # torch, numpy, PyAV, Pillow or FastAPI.
+  bare-install:
+    name: bare install (pydantic only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install core only
+        run: pip install -e . pytest
+
+      - name: Tests that need no optional dependency
+        run: python -m pytest
+
+  # The collector's bundle logic under Node's own test runner. No `npm install`: the pure
+  # module has no dependencies, and node --experimental-strip-types reads the TypeScript
+  # directly. A CI job that needed a lockfile install would be a CI job that broke the
+  # first time Expo moved.
+  collector:
+    name: collector bundle logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Tests
+        working-directory: apps/collector
+        run: npm test
+
+  # Rule 9. Cheap to run, and the only moment it can be run cheaply: git keeps history,
+  # so a survey frame that reaches this public repository cannot be taken back.
+  no-survey-data:
+    name: no survey data committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check tracked files
+        run: python scripts/check_no_survey_data.py
