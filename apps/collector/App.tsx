@@ -21,12 +21,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
-  BUNDLE_SCHEMA_VERSION,
   LocationRecord,
   SurveyPaths,
   appendLocations,
+  buildRoute,
   createSurvey,
   describeAccuracy,
+  describeStorage,
+  fileIsPresent,
+  formatElapsed,
+  resetAppendQueues,
   toLocationRecord,
   writeDevice,
   writeManifest,
@@ -37,9 +41,6 @@ const APP_VERSION = '0.1.0';
 
 /** How often buffered fixes are flushed to disk. See src/survey.ts on the trade-off. */
 const FLUSH_INTERVAL_MS = 5000;
-
-/** Refuse to start a survey with less than this free, rather than fail mid-drive. */
-const MIN_FREE_BYTES = 2 * 1024 * 1024 * 1024;
 
 type Phase = 'idle' | 'starting' | 'recording' | 'saving' | 'done' | 'error';
 
@@ -55,6 +56,7 @@ export default function App() {
   const [lastAccuracy, setLastAccuracy] = useState<number | undefined>();
   const [lastSpeed, setLastSpeed] = useState<number | undefined>();
   const [surveyId, setSurveyId] = useState<string | null>(null);
+  const [storage, setStorage] = useState<ReturnType<typeof describeStorage> | null>(null);
 
   const cameraRef = useRef<CameraView>(null);
   const pathsRef = useRef<SurveyPaths | null>(null);
@@ -64,6 +66,19 @@ export default function App() {
   const tickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef<Date | null>(null);
   /**
+   * The survey id, mirrored into a ref. `stop()` is a callback and reading the state
+   * variable there risks a stale closure — writing the wrong id into route.json would
+   * break the link between the bundle and its own directory name.
+   */
+  const surveyIdRef = useRef<string | null>(null);
+  /**
+   * The promise from `recordAsync()`, which resolves only once recording has stopped
+   * AND the file is written. `stop()` must await it before writing the manifest;
+   * otherwise the bundle is declared complete while the video is still in flight, and a
+   * user who closes the app on seeing "done" loses the entire drive.
+   */
+  const recordingRef = useRef<Promise<void> | null>(null);
+  /**
    * The video time anchor, captured once at recording start and never recomputed.
    * `started_at` (when the user tapped START) and `recording_start_epoch_ms` (when the
    * camera actually began) are different instants, and conflating them shifts every
@@ -71,15 +86,31 @@ export default function App() {
    */
   const recordingStartRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { status, ios } = await Location.requestForegroundPermissionsAsync();
-      setLocationGranted(status === 'granted');
-      // SDK 55+ reports whether iOS granted full or reduced accuracy. A survey under
-      // reduced accuracy is recoverable but must be recorded, not guessed at later.
-      if (ios?.scopedAccuracy) setAccuracyAuthorization(ios.scopedAccuracy);
-    })();
+  const requestLocation = useCallback(async () => {
+    const { status, ios } = await Location.requestForegroundPermissionsAsync();
+    setLocationGranted(status === 'granted');
+    // SDK 55+ reports whether iOS granted full or reduced accuracy. A survey under
+    // reduced accuracy is recoverable but must be recorded, not guessed at later.
+    if (ios?.scopedAccuracy) setAccuracyAuthorization(ios.scopedAccuracy);
+    return status === 'granted';
   }, []);
+
+  useEffect(() => {
+    void requestLocation();
+  }, [requestLocation]);
+
+  /** Free space, shown before the drive rather than discovered during it. */
+  const refreshStorage = useCallback(async () => {
+    try {
+      setStorage(describeStorage(await FileSystem.getFreeDiskStorageAsync()));
+    } catch {
+      setStorage(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshStorage();
+  }, [refreshStorage]);
 
   const flush = useCallback(async () => {
     const paths = pathsRef.current;
@@ -104,20 +135,25 @@ export default function App() {
         const result = await requestCameraPermission();
         if (!result.granted) throw new Error('Camera permission is required.');
       }
-      if (!locationGranted) throw new Error('Location permission is required.');
-
-      const free = await FileSystem.getFreeDiskStorageAsync();
-      if (free < MIN_FREE_BYTES) {
-        throw new Error(
-          `Only ${(free / 1e9).toFixed(1)} GB free. Free up space before surveying.`,
-        );
+      if (!locationGranted && !(await requestLocation())) {
+        throw new Error('Location permission is required.');
       }
+
+      // Recordable minutes, not a fixed byte floor: the old 2 GB threshold bought about
+      // 17 minutes at a pessimistic bitrate, so a survey meeting M1's own 30-minute
+      // acceptance criterion could fill the phone partway through and truncate the video.
+      const free = await FileSystem.getFreeDiskStorageAsync();
+      const space = describeStorage(free);
+      setStorage(space);
+      if (!space.ok) throw new Error(space.label);
 
       const baseDir = FileSystem.documentDirectory;
       if (!baseDir) throw new Error('No writable document directory.');
 
+      resetAppendQueues();
       const { surveyId: id, paths } = await createSurvey(baseDir);
       pathsRef.current = paths;
+      surveyIdRef.current = id;
       setSurveyId(id);
 
       await activateKeepAwakeAsync();
@@ -148,15 +184,15 @@ export default function App() {
       const recordingStartEpochMs = Date.now();
       recordingStartRef.current = recordingStartEpochMs;
 
-      await writeRoute(paths.route, {
-        schema_version: BUNDLE_SCHEMA_VERSION,
-        route_id: id,
-        started_at: startedAt.toISOString(),
-        recording_start_epoch_ms: recordingStartEpochMs,
-        camera_facing: 'back',
-        requested_video_quality: '1080p',
-        app_version: APP_VERSION,
-      });
+      await writeRoute(
+        paths.route,
+        buildRoute({
+          routeId: id,
+          startedAt,
+          recordingStartEpochMs,
+          appVersion: APP_VERSION,
+        }),
+      );
 
       await writeDevice(paths.device, {
         os: Platform.OS,
@@ -172,22 +208,33 @@ export default function App() {
 
       setPhase('recording');
 
-      // recordAsync resolves only when recording stops, so it is intentionally not
-      // awaited here.
-      cameraRef.current
-        ?.recordAsync()
+      // recordAsync resolves only when recording stops, so it is not awaited here — but
+      // the promise is KEPT, because stop() must wait for the file to be moved into
+      // place before it declares the bundle complete.
+      const recording = cameraRef.current?.recordAsync();
+      recordingRef.current = Promise.resolve(recording)
         .then(async (video) => {
           if (video?.uri && pathsRef.current) {
             await FileSystem.moveAsync({ from: video.uri, to: pathsRef.current.video });
           }
         })
-        .catch((err) => setMessage(`Recording error: ${String(err)}`));
+        .catch((err) => {
+          setMessage(`Recording error: ${String(err)}`);
+        });
     } catch (err) {
       setPhase('error');
       setMessage(String(err instanceof Error ? err.message : err));
       await cleanup();
     }
-  }, [cameraPermission, requestCameraPermission, locationGranted, accuracyAuthorization, flush]);
+  }, [
+    cameraPermission,
+    requestCameraPermission,
+    locationGranted,
+    requestLocation,
+    accuracyAuthorization,
+    flush,
+    cleanup,
+  ]);
 
   const cleanup = useCallback(async () => {
     subscriptionRef.current?.remove();
@@ -206,39 +253,58 @@ export default function App() {
   const stop = useCallback(async () => {
     setPhase('saving');
     try {
+      const endedAt = new Date();
       cameraRef.current?.stopRecording();
       await cleanup();
       await flush();
 
+      // Wait for the camera to finish writing and for the file to be moved into the
+      // survey directory. Without this the manifest below is written while the video is
+      // still in flight, the screen says "done", and a user who closes the app there
+      // has lost the whole drive.
+      if (recordingRef.current) await recordingRef.current;
+      recordingRef.current = null;
+
       const paths = pathsRef.current;
-      if (paths && startedAtRef.current && recordingStartRef.current != null) {
+      const routeId = surveyIdRef.current;
+      if (paths && routeId && startedAtRef.current && recordingStartRef.current != null) {
         // Rewritten only to add ended_at. The recording anchor is carried through
         // unchanged — recomputing it here would silently offset the whole survey.
-        await writeRoute(paths.route, {
-          schema_version: BUNDLE_SCHEMA_VERSION,
-          route_id: surveyId!,
-          started_at: startedAtRef.current.toISOString(),
-          ended_at: new Date().toISOString(),
-          recording_start_epoch_ms: recordingStartRef.current,
-          camera_facing: 'back',
-          requested_video_quality: '1080p',
-          app_version: APP_VERSION,
-        });
-        await writeManifest(paths.manifest, [
-          'route.json',
-          'locations.jsonl',
-          'device.json',
-          'video.mp4',
-        ]);
+        await writeRoute(
+          paths.route,
+          buildRoute({
+            routeId,
+            startedAt: startedAtRef.current,
+            endedAt,
+            recordingStartEpochMs: recordingStartRef.current,
+            appVersion: APP_VERSION,
+          }),
+        );
+
+        // The manifest states what is actually there. Listing video.mp4 unconditionally
+        // would send the processor looking for a file a failed recording never wrote.
+        const hasVideo = await fileIsPresent(paths.video);
+        await writeManifest(paths.manifest, { hasVideo });
+        if (!hasVideo) {
+          setMessage('Saved, but NO VIDEO was recorded. The GPS track is still usable.');
+        }
       }
       setPhase('done');
+      void refreshStorage();
     } catch (err) {
       setPhase('error');
       setMessage(String(err));
     }
-  }, [cleanup, flush, surveyId]);
+  }, [cleanup, flush, refreshStorage]);
 
-  useEffect(() => () => void cleanup(), [cleanup]);
+  // On unmount, flush whatever is buffered before tearing down. Up to five seconds of
+  // fixes live only in memory between flushes.
+  useEffect(
+    () => () => {
+      void flush().finally(() => void cleanup());
+    },
+    [cleanup, flush],
+  );
 
   const gps = describeAccuracy(lastAccuracy);
   const permissionsReady = Boolean(cameraPermission?.granted) && locationGranted;
@@ -254,9 +320,26 @@ export default function App() {
           <Text style={styles.help}>
             RoadEye needs camera and location access to record a survey.
           </Text>
-          <Pressable style={styles.button} onPress={() => requestCameraPermission()}>
+          <Text style={styles.help}>
+            {cameraPermission?.granted ? '✓' : '✗'} Camera{'   '}
+            {locationGranted ? '✓' : '✗'} Location
+          </Text>
+          <Pressable
+            style={styles.button}
+            onPress={async () => {
+              // Both, and both retried. The old version only re-requested the camera, so
+              // anyone who declined location once was stuck on a screen whose only
+              // button could not fix the thing it was complaining about.
+              if (!cameraPermission?.granted) await requestCameraPermission();
+              if (!locationGranted) await requestLocation();
+            }}
+          >
             <Text style={styles.buttonText}>Grant permissions</Text>
           </Pressable>
+          <Text style={styles.safety}>
+            If nothing happens, the permission was denied permanently — grant it in the
+            system Settings app.
+          </Text>
         </View>
       )}
 
@@ -266,6 +349,9 @@ export default function App() {
         <Text style={styles.status}>
           {lastSpeed != null ? `${(lastSpeed * 3.6).toFixed(0)} km/h` : '– km/h'} · {fixCount} fixes
         </Text>
+        {storage ? (
+          <Text style={[styles.status, !storage.ok && styles.warn]}>{storage.label}</Text>
+        ) : null}
         {surveyId ? <Text style={styles.survey}>{surveyId}</Text> : null}
         {message ? <Text style={styles.error}>{message}</Text> : null}
       </View>
@@ -290,12 +376,6 @@ export default function App() {
       </View>
     </View>
   );
-}
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 const styles = StyleSheet.create({

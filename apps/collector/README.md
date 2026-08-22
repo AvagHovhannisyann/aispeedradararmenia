@@ -12,6 +12,19 @@ and writes a **survey bundle** the offline pipeline can process.
 M1 scaffold. It has **not yet been run on a real device** — see "Before the first
 drive" below. Nothing in this repository has been validated against real road footage.
 
+Four bugs were found and fixed by reading it closely, each of which would have cost a
+whole survey:
+
+| Bug | What it would have done |
+|---|---|
+| `stop()` wrote the manifest without awaiting `recordAsync()` | Declared the bundle complete while the video was still in flight. Close the app on "done" and the drive is gone |
+| Concurrent flushes into a read-modify-write append | Two overlapping writes, the second silently discarding the first's GPS fixes |
+| A fixed 2 GB free-space floor | About 17 minutes of 1080p video, against an acceptance criterion of 30. The phone fills partway through and truncates |
+| The permissions button only re-requested the camera | Decline location once and you are stuck on a screen whose only button cannot fix what it is complaining about |
+
+They are pinned by `tests/integration/test_collector_contract.py`. Source-reading is
+weaker than running the thing, and much better than nothing.
+
 ## Setup
 
 ```bash
@@ -19,6 +32,25 @@ cd apps/collector
 npm install
 npm start
 ```
+
+## Testing it without a phone
+
+The bundle contract lives in `src/bundle.ts`, which has **no `expo-*` imports** — so it
+runs under Node with no install at all:
+
+```bash
+npm test          # or, from the repo root:
+node --experimental-strip-types --test 'apps/collector/tests/*.test.ts'
+```
+
+`pytest` runs the same suite (`tests/integration/test_collector_js.py`), skipping it when
+Node is absent. One command covers both halves of the contract.
+
+That split matters more here than anywhere else in the repository: this is the one
+component that has never run on a device, so it is the one place where a bug is found by
+a wasted 30-minute drive rather than by a stack trace. `src/survey.ts` holds the
+filesystem calls and is kept as thin and as dumb as possible, because it is the part that
+cannot be checked here.
 
 Then open the project in Expo Go (Android) or a development build (iOS).
 

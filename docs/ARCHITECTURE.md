@@ -62,7 +62,7 @@ pipeline.py · cli.py · services/api  ← orchestration
 
 **The domain layer imports no ML framework.** A `torch.Tensor` in a domain model is a
 bug. This is what makes the whole pipeline testable on a CPU-only machine with no
-weights, no ffmpeg and no network — 314 of the 452 tests need no optional dependency at
+weights, no ffmpeg and no network — 314 of the 459 tests need no optional dependency at
 all and run in ~1.7 s.
 
 ## The five seams
@@ -161,6 +161,6 @@ apps/collector/      Expo survey collector (TypeScript)
 services/api/        FastAPI + review UI + municipal dashboard
 src/roadeye/         the processing core (implemented)
 ml/                  datasets, training, evaluation, experiments
-tests/               unit · integration · e2e (452 passing)
+tests/               unit · integration · e2e (459 passing)
 docs/                research, decisions, protocol, privacy, metrics
 ```

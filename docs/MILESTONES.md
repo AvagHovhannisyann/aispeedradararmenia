@@ -32,6 +32,11 @@ Current: **M1**.
 - Survey bundle format v1, with a cross-language contract test
 - `roadeye validate` for inspecting bundles
 - Collection protocol written
+- Bundle contract split into a dependency-free module and **tested under `node --test`**
+  with no install — 31 tests, run by `pytest` too
+- Four survey-losing bugs found by review and fixed: the manifest written before the
+  video landed, concurrent flushes discarding GPS fixes, a free-space floor too small
+  for a 30-minute drive, and a permissions button that could not re-request location
 
 **Remaining:**
 - [ ] `npm install` and run on a physical device

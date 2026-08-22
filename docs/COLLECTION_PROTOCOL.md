@@ -84,7 +84,9 @@ domains before any of them works.
 ## Pre-drive checklist
 
 - [ ] Phone charged or charging (video + GPS drains fast)
-- [ ] **≥2 GB free storage** — the app refuses to start below this
+- [ ] **Enough free storage for the planned drive** — the app shows recordable minutes
+      and refuses to start below 10. It estimates 120 MB per minute of 1080p video,
+      deliberately pessimistic; a 30-minute survey therefore wants ~4 GB free
 - [ ] Mount rigid; phone cannot move when the car hits a bump
 - [ ] Windshield clean in the camera's field of view
 - [ ] Rear camera, 1× lens, landscape
@@ -105,6 +107,21 @@ first — a failed survey costs 30 minutes, and nothing else is worth more than 
 
 Keep the app foregrounded for the whole drive. Backgrounding it stops the recording
 (deliberate MVP scope — ADR-002).
+
+## After the first survey, measure the bitrate
+
+The app's 120 MB/min figure is an **estimate**, chosen at the pessimistic end because
+over-estimating costs a warning and under-estimating costs a truncated drive. Replace it
+with a measurement as soon as there is one:
+
+```bash
+ls -l  <survey>/video.mp4          # bytes
+python3 -c "print(<bytes> / 1e6 / <minutes>, 'MB per minute')"
+```
+
+Then update `VIDEO_BYTES_PER_MINUTE` in `apps/collector/src/bundle.ts`. This is the first
+of several numbers in this repository that are honest guesses until a real drive replaces
+them.
 
 ## After the survey
 
