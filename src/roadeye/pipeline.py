@@ -38,7 +38,11 @@ from roadeye.ingest.bundle import SurveyBundle, load_bundle
 from roadeye.quality.metrics import QualityConfig, assess
 from roadeye.storage.db import Database
 from roadeye.tracking.tracker import GreedyIouTracker, TrackingConfig
-from roadeye.video.decoder import FrameSource, SyntheticFrameSource
+from roadeye.video.decoder import (
+    FrameSource,
+    ImageSequenceFrameSource,
+    SyntheticFrameSource,
+)
 from roadeye.video.sampling import SamplingConfig, build_sampling_plan
 from roadeye.vision.base import RoadDamageDetector
 
@@ -297,6 +301,38 @@ def process_bundle(
     )
 
 
+def open_frame_source(bundle: SurveyBundle) -> FrameSource | None:
+    """Pick the best available frame source for a bundle.
+
+    Preference order: a real video if one is present and decodable, then a ``frames/``
+    directory of images, then nothing (the caller falls back to synthetic frames).
+
+    The middle case matters more than it looks: without ffmpeg there is otherwise no
+    way to run a real detector over real pixels, so a bundle carrying extracted frames
+    keeps the whole chain testable and usable on a machine with no video stack.
+    """
+    if bundle.video_path is not None and bundle.video_path.exists():
+        try:
+            from roadeye.video.decoder import open_video
+
+            return open_video(bundle.video_path)
+        except (RuntimeError, FileNotFoundError):
+            # ffmpeg/PyAV missing. Fall through — a frames directory may still work.
+            pass
+
+    frames_dir = bundle.path / "frames"
+    if frames_dir.is_dir():
+        try:
+            return ImageSequenceFrameSource(
+                frames_dir,
+                duration_s=bundle.duration_s(),
+                survey_id=bundle.survey_id,
+            )
+        except (FileNotFoundError, NotADirectoryError, RuntimeError):
+            return None
+    return None
+
+
 def process_survey(
     bundle_path: str | Path,
     detector: RoadDamageDetector,
@@ -308,6 +344,8 @@ def process_survey(
     """Load a bundle, process it, and persist the result if a database is given."""
     cfg = config or PipelineConfig()
     bundle = load_bundle(bundle_path, max_accuracy_m=cfg.max_gps_accuracy_m)
+    if frame_source is None:
+        frame_source = open_frame_source(bundle)
     result = process_bundle(bundle, detector, frame_source=frame_source, config=cfg)
 
     if db is not None:

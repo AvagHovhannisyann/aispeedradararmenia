@@ -98,6 +98,106 @@ class SyntheticFrameSource:
             )
 
 
+class ImageSequenceFrameSource:
+    """Treats a folder of images as if it were the survey video.
+
+    Two reasons this exists rather than being a testing shortcut:
+
+    * **ffmpeg is not everywhere.** Without it there is no way to run a *real*
+      detector over *real* pixels, so the only end-to-end path would be synthetic —
+      which cannot catch a detector integration bug.
+    * **Some surveys are photographs.** A phone taking timed stills, or frames already
+      extracted by another tool, is a legitimate input. The rest of the pipeline does
+      not care where a frame came from.
+
+    Images are ordered by filename and spread evenly across ``duration_s``, so the
+    existing timestamp-to-GPS machinery places them without special cases.
+    """
+
+    def __init__(
+        self,
+        directory: str | Path,
+        *,
+        duration_s: float | None = None,
+        fps: float = 1.0,
+        survey_id: str | None = None,
+    ) -> None:
+        self.directory = Path(directory)
+        if not self.directory.is_dir():
+            raise NotADirectoryError(f"not a directory: {self.directory}")
+
+        suffixes = {".jpg", ".jpeg", ".png", ".bmp"}
+        self.paths = sorted(p for p in self.directory.iterdir() if p.suffix.lower() in suffixes)
+        if not self.paths:
+            raise FileNotFoundError(f"no images found in {self.directory}")
+
+        self.survey_id = survey_id or self.directory.name
+        self._duration = (
+            duration_s if duration_s is not None else max(0.0, (len(self.paths) - 1) / fps)
+        )
+        # Evenly spaced timestamps. With one image the whole survey collapses to t=0,
+        # which is correct rather than a division by zero.
+        step = self._duration / (len(self.paths) - 1) if len(self.paths) > 1 else 0.0
+        self._times = [round(i * step, 6) for i in range(len(self.paths))]
+
+        width, height = self._probe_size(self.paths[0])
+        self._info = VideoInfo(
+            duration_s=self._duration,
+            width=width,
+            height=height,
+            fps=(len(self.paths) / self._duration) if self._duration > 0 else None,
+            frame_count=len(self.paths),
+        )
+
+    @staticmethod
+    def _probe_size(path: Path) -> tuple[int, int]:
+        try:
+            from PIL import Image
+        except ImportError as exc:  # pragma: no cover - depends on optional extra
+            raise RuntimeError(
+                "Pillow is required to read image sequences. "
+                "Install with: pip install -e '.[vision]'"
+            ) from exc
+        with Image.open(path) as handle:
+            return handle.width, handle.height
+
+    def info(self) -> VideoInfo:
+        return self._info
+
+    def frames_at(self, video_times_s: Sequence[float]) -> Iterator[tuple[float, FrameImage]]:
+        """Yield the image nearest each requested timestamp.
+
+        Nearest rather than exact: the sampling plan is built from GPS distance and
+        will ask for times that fall between images. Each image is used at most once,
+        so a plan denser than the images does not duplicate frames into the pipeline —
+        which would manufacture defect observations that never existed.
+        """
+        from roadeye.vision.annotate import load_image_array
+
+        used: set[int] = set()
+        for target in sorted(video_times_s):
+            index = min(
+                (i for i in range(len(self.paths)) if i not in used),
+                key=lambda i: abs(self._times[i] - target),
+                default=None,
+            )
+            if index is None:
+                break
+            used.add(index)
+            path = self.paths[index]
+            pixels = load_image_array(path)
+            yield (
+                self._times[index],
+                FrameImage(
+                    frame_id=f"{self.survey_id}:{path.stem}",
+                    width=pixels.shape[1],
+                    height=pixels.shape[0],
+                    pixels=pixels,
+                    image_path=str(path),
+                ),
+            )
+
+
 class PyAvFrameSource:
     """Real decoding via PyAV, imported lazily.
 
