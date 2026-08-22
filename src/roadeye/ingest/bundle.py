@@ -51,6 +51,9 @@ KNOWN_FILES = {
     "device.json",
     "calibration.json",
     "video.mp4",
+    # Pre-extracted frames, for bundles built without video or on machines with
+    # no ffmpeg. See roadeye.video.decoder.ImageSequenceFrameSource.
+    "frames",
 }
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadEye review</title>
+<style>
+  /*
+   * Designed around one number: seconds per decision. A reviewer works through
+   * hundreds of defects, so every extra click or wait multiplies. Hence: keyboard
+   * first, the next image preloaded, and the evidence occupying most of the screen.
+   */
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f7; --panel: #fff; --text: #1a1a1a; --muted: #6b6b70;
+    --line: #e2e2e5; --accent: #1e88e5;
+    --approve: #2e7d32; --reject: #c62828; --amber: #ef6c00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151517; --panel:#1e1e21; --text:#ececf0; --muted:#9a9aa2; --line:#2e2e33; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 16px; margin: 0; }
+  .counts { display: flex; gap: 14px; font-size: 13px; color: var(--muted); }
+  .counts b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .warn {
+    background: #fff3cd; color: #6b5200; border-left: 3px solid #e0a800;
+    padding: 6px 12px; border-radius: 4px; font-size: 12.5px;
+  }
+  @media (prefers-color-scheme: dark) { .warn { background:#3a3016; color:#ffd97a; } }
+
+  main { display: grid; grid-template-columns: minmax(0,1fr) 330px; gap: 18px; padding: 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .imgwrap { position: relative; background: #000; display: grid; place-items: center; min-height: 320px; }
+  .imgwrap img { max-width: 100%; max-height: 70vh; display: block; }
+  .thumb {
+    position: absolute; right: 12px; bottom: 12px; width: 148px;
+    border: 2px solid #fff; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+    background: #000;
+  }
+  .meta { display: flex; gap: 18px; flex-wrap: wrap; padding: 10px 14px; font-size: 13px; border-top: 1px solid var(--line); }
+  .meta span { color: var(--muted); }
+  .meta b { font-variant-numeric: tabular-nums; }
+
+  aside { display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button kbd {
+    font: 11px/1 ui-monospace, monospace; background: rgba(128,128,128,.22);
+    padding: 2px 5px; border-radius: 3px; margin-left: 6px;
+  }
+  .approve { background: var(--approve); color: #fff; border-color: var(--approve); flex: 1; }
+  .reject  { background: var(--reject);  color: #fff; border-color: var(--reject);  flex: 1; }
+  .full { width: 100%; }
+  textarea { width: 100%; font: inherit; font-size: 13px; padding: 8px; border-radius: 6px;
+             border: 1px solid var(--line); background: var(--bg); color: var(--text); resize: vertical; }
+  .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+  .toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: #222; color: #fff; padding: 9px 16px; border-radius: 20px;
+    font-size: 13px; opacity: 0; transition: opacity .18s; pointer-events: none; z-index: 20;
+  }
+  .toast.show { opacity: .95; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RoadEye review</h1>
+  <div class="counts">
+    <div>pending <b id="c-pending">–</b></div>
+    <div>verified <b id="c-verified">–</b></div>
+    <div>rejected <b id="c-rejected">–</b></div>
+    <div>reviewed this session <b id="c-session">0</b></div>
+  </div>
+  <div class="warn" id="model-warn" hidden></div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="imgwrap">
+      <img id="context" alt="Defect in context" />
+      <img id="crop" class="thumb" alt="Close-up of the detection" />
+    </div>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>Decide</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button class="approve" data-act="approve">Approve <kbd>A</kbd></button>
+        <button class="reject" data-act="reject">Reject <kbd>R</kbd></button>
+      </div>
+      <button class="full" data-act="skip">Skip for now <kbd>S</kbd></button>
+    </div>
+
+    <div class="card">
+      <h2>Wrong class?</h2>
+      <div class="row" id="classes"></div>
+    </div>
+
+    <div class="card">
+      <h2>Severity <span style="text-transform:none;font-weight:400">(human-assigned)</span></h2>
+      <div class="row" id="severities"></div>
+    </div>
+
+    <div class="card">
+      <h2>Evidence</h2>
+      <dl id="provenance"></dl>
+    </div>
+
+    <div class="card">
+      <h2>Note</h2>
+      <textarea id="note" rows="2" placeholder="Optional — e.g. 'manhole surround, not a pothole'"></textarea>
+      <button class="full" style="margin-top:8px" data-act="note">Save note <kbd>N</kbd></button>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CLASSES = ["pothole", "alligator_crack", "longitudinal_crack", "transverse_crack"];
+const SEVERITIES = ["low", "medium", "high"];
+
+let queue = [], index = 0, session = 0;
+
+const $ = (id) => document.getElementById(id);
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove("show"), 1400);
+}
+
+async function load() {
+  const res = await fetch("/api/queue");
+  const data = await res.json();
+  queue = data.items;
+  index = 0;
+  paintCounts(data.totals);
+  render();
+}
+
+function paintCounts(totals) {
+  const byStatus = (totals && totals.by_status) || {};
+  $("c-pending").textContent = byStatus.probable || 0;
+  $("c-verified").textContent = byStatus.verified || 0;
+  $("c-rejected").textContent = byStatus.rejected || 0;
+  $("c-session").textContent = session;
+}
+
+function current() { return queue[index]; }
+
+function render() {
+  const d = current();
+  if (!d) {
+    document.querySelector("main").innerHTML =
+      '<div class="empty"><h2>Nothing left to review</h2>' +
+      '<p>Every defect in this database has been decided.</p></div>';
+    return;
+  }
+
+  $("context").src = `/api/evidence/${d.context_image}`;
+  $("crop").src = `/api/evidence/${d.crop_image}`;
+
+  $("meta").innerHTML = [
+    ["class", d.damage_class],
+    ["confidence", (d.confidence * 100).toFixed(0) + "%"],
+    ["position", `±${d.uncertainty_m} m`],
+    ["seen", `${d.observation_count}×`],
+    ["queue", `${index + 1} / ${queue.length}`],
+  ].map(([k, v]) => `<div><span>${k}</span> <b>${v}</b></div>`).join("");
+
+  $("provenance").innerHTML = [
+    ["defect", d.defect_id],
+    ["frame", d.representative_frame_id || "–"],
+    ["model", d.model_id || "–"],
+    ["run", d.processing_run_id || "–"],
+    ["survey", (d.survey_ids || []).join(", ") || "–"],
+    ["method", d.location_method],
+    ["lat, lon", `${d.lat.toFixed(6)}, ${d.lon.toFixed(6)}`],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  // Preload the next image so the reviewer never waits on the network.
+  const next = queue[index + 1];
+  if (next) new Image().src = `/api/evidence/${next.context_image}`;
+
+  $("note").value = "";
+}
+
+async function send(action, extra = {}) {
+  const d = current();
+  if (!d) return;
+  const body = { action, reviewer: "local", ...extra };
+  const note = $("note").value.trim();
+  if (note) body.note = note;
+
+  const res = await fetch(`/api/defects/${d.defect_id}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    toast("Failed: " + (err.detail || res.status));
+    return;
+  }
+  session += 1;
+  $("c-session").textContent = session;
+  return res.json();
+}
+
+async function decide(action, extra = {}) {
+  const result = await send(action, extra);
+  if (!result) return;
+  toast(`${action.replace("_", " ")} → ${result.status}`);
+  advance();
+}
+
+function advance() {
+  queue.splice(index, 1);          // decided items leave the queue
+  if (index >= queue.length) index = Math.max(0, queue.length - 1);
+  render();
+  refreshCounts();
+}
+
+async function refreshCounts() {
+  try {
+    const res = await fetch("/api/stats");
+    const data = await res.json();
+    paintCounts(data.defects);
+  } catch { /* counts are cosmetic; never block review on them */ }
+}
+
+// ---- controls -------------------------------------------------------------
+
+$("classes").innerHTML = CLASSES.map((c, i) =>
+  `<button data-class="${c}">${c.replace(/_/g, " ")}<kbd>${i + 1}</kbd></button>`
+).join("");
+$("severities").innerHTML = SEVERITIES.map((s, i) =>
+  `<button data-sev="${s}">${s}<kbd>${["Q","W","E"][i]}</kbd></button>`
+).join("");
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  if (btn.dataset.act === "approve") decide("approve");
+  else if (btn.dataset.act === "reject") decide("reject");
+  else if (btn.dataset.act === "skip") { index = (index + 1) % Math.max(1, queue.length); render(); }
+  else if (btn.dataset.act === "note") decide("add_note");
+  else if (btn.dataset.class) decide("change_class", { damage_class: btn.dataset.class });
+  else if (btn.dataset.sev) {
+    // Severity is a property change, not a verdict, so stay on this defect.
+    send("change_severity", { severity: btn.dataset.sev }).then((r) => {
+      if (r) { toast("severity → " + btn.dataset.sev); refreshCounts(); }
+    });
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "TEXTAREA" || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "a") decide("approve");
+  else if (k === "r") decide("reject");
+  else if (k === "s") { index = (index + 1) % Math.max(1, queue.length); render(); }
+  else if (k === "n") $("note").focus();
+  else if (["1","2","3","4"].includes(k)) decide("change_class", { damage_class: CLASSES[+k - 1] });
+  else if (["q","w","e"].includes(k)) {
+    const sev = SEVERITIES["qwe".indexOf(k)];
+    send("change_severity", { severity: sev }).then((r) => { if (r) { toast("severity → " + sev); refreshCounts(); }});
+  }
+  else if (e.key === "ArrowRight") { index = Math.min(queue.length - 1, index + 1); render(); }
+  else if (e.key === "ArrowLeft") { index = Math.max(0, index - 1); render(); }
+});
+
+load();
+</script>
+</body>
+</html>

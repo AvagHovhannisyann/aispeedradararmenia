@@ -1,0 +1,66 @@
+{
+  "model_id": "rdd_bootstrap_v001",
+  "model_dir": "models/road_damage/rdd_bootstrap_v001",
+  "dataset": "data/datasets/rdd2022_czech",
+  "dataset_content_hash": "479709822d0e2b169955930240afedcc",
+  "split": "test",
+  "images": 135,
+  "iou_threshold": 0.5,
+  "score_threshold": 0.05,
+  "total_predictions": 0,
+  "total_ground_truth": 92,
+  "per_class": [
+    {
+      "class": "alligator_crack",
+      "ground_truth": 8,
+      "predictions": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 8,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "average_precision": 0.0
+    },
+    {
+      "class": "longitudinal_crack",
+      "ground_truth": 46,
+      "predictions": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 46,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "average_precision": 0.0
+    },
+    {
+      "class": "pothole",
+      "ground_truth": 16,
+      "predictions": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 16,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "average_precision": 0.0
+    },
+    {
+      "class": "transverse_crack",
+      "ground_truth": 22,
+      "predictions": 0,
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 22,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "average_precision": 0.0
+    }
+  ],
+  "macro_f1": null,
+  "mAP@0.5": 0.0,
+  "reference": "Best multi-country ensemble at CRDDC'2022 reached roughly F1 0.76. This is a hard problem; treat that as the bar, not 0.99.",
+  "caveat": "Trained and evaluated on non-Armenian roads. Cross-country performance degrades substantially; these numbers do NOT predict Yerevan performance."
+}

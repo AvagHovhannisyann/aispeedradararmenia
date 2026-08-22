@@ -56,34 +56,51 @@ against synthetic data; must be re-confirmed on the first real bundle.*
 
 ---
 
-## M3 — Baseline computer vision
+## M3 — Baseline computer vision 🔄 IN PROGRESS
 
 **Goal:** a reproducible detector producing real detections.
 
+**Done:**
+- [x] Dataset ingestion with provenance, checksums and **partial download** —
+      `remote_zip.py` reads one country out of the 13.3 GB archive over HTTP ranges
+- [x] Map D00/D10/D20/D40 → RoadEye classes, preserving original codes
+- [x] Leakage-safe contiguous splits (ADR-008), asserted by test
+- [x] `TorchvisionDetector` adapter behind the existing Protocol
+- [x] Training pipeline with full experiment metadata and epoch checkpointing
+- [x] Evaluation with per-class metrics that refuses the training split
+- [x] Model registry entries inherit `distribution_allowed` from the dataset
+- [x] `roadeye detect` — run a model over images and draw the boxes
+
+**Remaining:**
 - [ ] Verify RDD2022's licence with the authors (**BLOCKING-1**)
-- [ ] Dataset ingestion with provenance, checksums and **partial/streaming download**
-      (13.3 GB against limited disk)
-- [ ] Map D00/D10/D20/D40 → RoadEye classes, preserving original codes
-- [ ] `TorchvisionDetector` adapter behind the existing Protocol
-- [ ] Train a baseline; record full experiment metadata
-- [ ] Model registry entry with `distribution_allowed=False`
+- [ ] Train properly on GPU (Kaggle) rather than a CPU proof run — `docs/TRAINING.md`
+- [ ] Run on **Armenian footage**, which does not exist until M1 completes
 
 **Acceptance:** a reproducible baseline runs on Armenian footage and produces
-detections with recorded provenance.
+detections with recorded provenance. *Blocked on M1: there is no Armenian footage.*
 
 ---
 
-## M4 — Armenian review loop
+## M4 — Armenian review loop ✅ COMPLETE (pending real data)
 
 **Goal:** turn drives into labelled Armenian data.
 
-- [ ] Local review UI: image, class, confidence → approve / reject / correct
-- [ ] Corrections export as a versioned dataset
-- [ ] Hard negatives deliberately collected: manholes, shadows, patches, wet asphalt
-- [ ] Retention policy enforcement + `Anonymizer` interface
+**Done:**
+- [x] Evidence images written per defect — clean frame, annotated context, close-up crop
+- [x] Keyboard-driven review UI: approve / reject / change class / severity / location
+- [x] Reviews are append-only, recording before and after values
+- [x] `roadeye export-dataset` turns decisions into a versioned training dataset
+- [x] Rejections become **hard negatives**; corrections carry the human's class
+- [x] Survey-disjoint splits, with an honest warning when only one drive exists
+- [x] Exported datasets are marked `distribution_allowed: true` — ours, not RDD2022's
+
+**Remaining:**
+- [ ] Retention policy enforcement + `Anonymizer` interface (moved to M5 with blurring)
+- [ ] Run it on **Armenian footage**, which does not exist until M1 completes
 
 **Acceptance:** a reviewer decides in seconds, and corrections flow into a dataset
-version.
+version. *Mechanically verified on synthetic and real road images; blocked on M1 for
+Armenian data.* See `docs/REVIEW_LOOP.md`.
 
 ---
 

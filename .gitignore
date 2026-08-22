@@ -38,3 +38,8 @@ exports/
 
 # Demo output
 demo_output/
+
+# ML artifacts — datasets and weights are large and licence-encumbered.
+# See docs/LICENSE_AUDIT.md: RDD2022-derived models are not distributable.
+data/
+models/

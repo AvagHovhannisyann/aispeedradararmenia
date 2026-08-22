@@ -78,8 +78,8 @@ nothing now.
 ### `ModelVersion` — provenance that travels with the weights
 
 ```python
-training_data_licenses: list[str]     # required to distribute
-distribution_allowed: bool = False    # fail closed
+training_data_licenses: list[str]  # required to distribute
+distribution_allowed: bool = False  # fail closed
 ```
 
 Because of BLOCKING-1 (RDD2022's contradictory licences), a model's distributability
