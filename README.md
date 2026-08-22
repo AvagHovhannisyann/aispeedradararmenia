@@ -1,1 +1,134 @@
-# aispeedradararmenia
+# RoadEye
+
+Smartphone-based road inspection. Mount an ordinary phone in a car, drive, and get a map
+of probable road defects — each one traceable back to the frame, the model and the
+configuration that produced it.
+
+Built for Armenian municipalities, on a zero software budget.
+
+---
+
+## Status: M1 — pre-first-drive
+
+**Nothing in this repository has been validated against a real road.**
+
+| Component | State |
+|---|---|
+| Processing core | Implemented — 201 tests, ~1.5 s, no GPU/ffmpeg/network needed |
+| Survey collector (Expo) | Scaffolded, **never run on a device** |
+| Road-damage detector | **Fake only** — no trained model exists |
+| Armenian dataset | **None** |
+| Dashboard / API / map matching / anonymisation | Not built |
+
+The CLI prints a warning whenever the fake detector runs. Any output it produces
+describes nothing about any road.
+
+## How it works
+
+```
+PHONE                          LAPTOP                        OUTPUT
+rear camera ──► video.mp4      ingest + validate             map of defects
+GPS ────────► locations.jsonl  sample frames by distance     evidence images
+                  │            detect road damage            CSV / GeoJSON
+             survey bundle ──► track across frames           human review
+                               interpolate positions
+                               cluster into defects
+                               store + export
+```
+
+The phone collects evidence; the laptop does the thinking. That is deliberate — see
+[ADR-001](docs/DECISIONS/ADR-001-offline-first.md).
+
+## Quick start
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest
+
+.venv/bin/roadeye env                    # host environment report
+.venv/bin/roadeye validate <bundle>      # inspect a survey bundle
+.venv/bin/roadeye process <bundle> --db roadeye.db
+.venv/bin/roadeye export --db roadeye.db --geojson defects.geojson
+```
+
+Requires Python ≥3.11 and one dependency (`pydantic`). Video decoding and real
+detectors are optional extras.
+
+## What makes this different from a pothole demo
+
+**One pothole is one defect.** A defect visible in 20 frames across 3 surveys is one
+map marker with 20 pieces of evidence, not 20 markers. Two independent deduplication
+stages — temporal tracking and geospatial clustering — enforce that, and both failure
+directions are pinned by tests.
+
+**Nothing claims precision it doesn't have.** Every coordinate carries how it was
+derived and how wrong it might be. A `GeoPoint` cannot be constructed without them. No
+pothole depth is inferred from a single monocular frame; no severity exists without a
+recorded source.
+
+**Only humans verify.** A machine may write `PROBABLE` and nothing stronger. Every
+human correction is retained as training signal, and the review log is append-only.
+
+**Every defect can answer "why do you believe this exists?"**
+
+```
+Defect → Observation → Detection → Frame → Survey → video + GPS
+              └→ ModelVersion → DatasetVersion → licences
+              └→ ProcessingRun → full config + git commit
+```
+
+## Two findings from the research phase worth knowing
+
+**RDD2022 — the obvious bootstrap dataset — has two contradictory licences.** The
+Figshare DOI record says CC BY 4.0; the authors' own repository says CC BY-SA 4.0. Under
+the share-alike reading, distributing a model trained on it could oblige us to give the
+model away. We assume the stricter reading and quarantine RDD-derived weights as
+non-distributable until the authors clarify.
+→ [`docs/LICENSE_AUDIT.md`](docs/LICENSE_AUDIT.md)
+
+**Ultralytics YOLO — used by nearly every road-damage tutorial — is AGPL-3.0**, covering
+the training code *and the models it produces*, with a network clause that reaches a
+hosted municipal dashboard. It is rejected for the shipping path, not merely noted.
+→ [ADR-009](docs/DECISIONS/ADR-009-reject-ultralytics.md)
+
+## Documentation
+
+| | |
+|---|---|
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | How the system fits together |
+| [DECISIONS](docs/DECISIONS/) | Why, one ADR at a time |
+| [RESEARCH](docs/RESEARCH.md) | Verified findings with sources |
+| [TECHNOLOGY_EVALUATION](docs/TECHNOLOGY_EVALUATION.md) | USE / EXPERIMENT / DEFER / REJECT |
+| [LICENSE_AUDIT](docs/LICENSE_AUDIT.md) | What we can legally ship |
+| [DATA_MODEL](docs/DATA_MODEL.md) | Entities and invariants |
+| [GEOLOCATION](docs/GEOLOCATION.md) | Positioning, with the projection maths |
+| [ML_STRATEGY](docs/ML_STRATEGY.md) | Dataset, leakage, provenance |
+| [METRICS](docs/METRICS.md) | Model metrics vs the ones that matter |
+| [PRIVACY](docs/PRIVACY.md) | People in the footage |
+| [COLLECTION_PROTOCOL](docs/COLLECTION_PROTOCOL.md) | How to drive a survey |
+| [PILOT_PLAN](docs/PILOT_PLAN.md) | The honest comparison against inspectors |
+| [COST_LEDGER](docs/COST_LEDGER.md) | What everything costs |
+| [MILESTONES](docs/MILESTONES.md) | M0 → M8 |
+
+## Repository layout
+
+```
+src/roadeye/       processing core (implemented)
+apps/collector/    Expo survey collector
+apps/dashboard/    React + MapLibre municipal UI      [M6]
+services/api/      FastAPI local API                  [M5]
+ml/                datasets, training, experiments
+tests/             unit · integration · e2e
+docs/              research, decisions, protocol
+```
+
+## Next step
+
+Get a real survey bundle off a real phone after a real drive through Yerevan. Everything
+else is secondary.
+
+## Licence
+
+Proprietary. Third-party components are inventoried in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
