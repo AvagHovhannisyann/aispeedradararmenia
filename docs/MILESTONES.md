@@ -56,20 +56,28 @@ against synthetic data; must be re-confirmed on the first real bundle.*
 
 ---
 
-## M3 — Baseline computer vision
+## M3 — Baseline computer vision 🔄 IN PROGRESS
 
 **Goal:** a reproducible detector producing real detections.
 
+**Done:**
+- [x] Dataset ingestion with provenance, checksums and **partial download** —
+      `remote_zip.py` reads one country out of the 13.3 GB archive over HTTP ranges
+- [x] Map D00/D10/D20/D40 → RoadEye classes, preserving original codes
+- [x] Leakage-safe contiguous splits (ADR-008), asserted by test
+- [x] `TorchvisionDetector` adapter behind the existing Protocol
+- [x] Training pipeline with full experiment metadata and epoch checkpointing
+- [x] Evaluation with per-class metrics that refuses the training split
+- [x] Model registry entries inherit `distribution_allowed` from the dataset
+- [x] `roadeye detect` — run a model over images and draw the boxes
+
+**Remaining:**
 - [ ] Verify RDD2022's licence with the authors (**BLOCKING-1**)
-- [ ] Dataset ingestion with provenance, checksums and **partial/streaming download**
-      (13.3 GB against limited disk)
-- [ ] Map D00/D10/D20/D40 → RoadEye classes, preserving original codes
-- [ ] `TorchvisionDetector` adapter behind the existing Protocol
-- [ ] Train a baseline; record full experiment metadata
-- [ ] Model registry entry with `distribution_allowed=False`
+- [ ] Train properly on GPU (Kaggle) rather than a CPU proof run — `docs/TRAINING.md`
+- [ ] Run on **Armenian footage**, which does not exist until M1 completes
 
 **Acceptance:** a reproducible baseline runs on Armenian footage and produces
-detections with recorded provenance.
+detections with recorded provenance. *Blocked on M1: there is no Armenian footage.*
 
 ---
 

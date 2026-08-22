@@ -14,9 +14,9 @@ Built for Armenian municipalities, on a zero software budget.
 
 | Component | State |
 |---|---|
-| Processing core | Implemented — 201 tests, ~1.5 s, no GPU/ffmpeg/network needed |
+| Processing core | Implemented — 266 tests, no GPU/ffmpeg/network needed |
 | Survey collector (Expo) | Scaffolded, **never run on a device** |
-| Road-damage detector | **Fake only** — no trained model exists |
+| Road-damage detector | Adapter + training pipeline built. Bootstrap model trained on **Czech** data only — not an Armenian detector |
 | Armenian dataset | **None** |
 | Dashboard / API / map matching / anonymisation | Not built |
 
