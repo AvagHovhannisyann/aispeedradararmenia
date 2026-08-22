@@ -29,7 +29,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -110,7 +110,7 @@ class RoadDamageDataset:
         if scale < 1.0:
             image = image.resize(
                 (max(1, int(image.width * scale)), max(1, int(image.height * scale))),
-                Image.BILINEAR,
+                Image.Resampling.BILINEAR,
             )
 
         tensor = torch.from_numpy(_to_array(image)).permute(2, 0, 1).float() / 255.0
@@ -180,8 +180,12 @@ def train(
     if len(train_set) == 0:
         raise SystemExit("training split is empty")
 
-    loader = DataLoader(
-        train_set,
+    # RoadDamageDataset deliberately does not subclass torch.utils.data.Dataset, because
+    # torch is imported lazily so this module can be imported (and type-checked) without
+    # it. DataLoader only needs __len__ and __getitem__ at runtime; its stubs ask for the
+    # nominal base class, hence the cast.
+    loader: DataLoader[Any] = DataLoader(
+        cast("Any", train_set),
         batch_size=batch_size,
         shuffle=True,
         collate_fn=collate,

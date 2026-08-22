@@ -167,7 +167,7 @@ def parse_voc(xml_bytes: bytes, *, image_id: str) -> ImageAnnotation:
         bnd = obj.find("bndbox")
         xmin, ymin = _int(bnd, "xmin"), _int(bnd, "ymin")
         xmax, ymax = _int(bnd, "xmax"), _int(bnd, "ymax")
-        if None in (xmin, ymin, xmax, ymax):
+        if xmin is None or ymin is None or xmax is None or ymax is None:
             continue
         # Clamp to the image and reject degenerate boxes; a zero-area box crashes
         # torchvision's loss computation with an unhelpful error deep in training.

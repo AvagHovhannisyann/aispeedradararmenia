@@ -48,7 +48,9 @@ it. Fetching 900 Czech images costs ~65 MB and about 12 seconds.
 | Norway | 10.61 GB | 80% of the archive. Skip unless you need it |
 
 ```python
-import sys; sys.path.insert(0, "ml/datasets")
+import sys
+
+sys.path.insert(0, "ml/datasets")
 from rdd2022 import fetch_country
 
 fetch_country("Czech", "data/datasets/rdd2022_czech", limit=900)

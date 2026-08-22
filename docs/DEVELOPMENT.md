@@ -26,7 +26,7 @@ Check what the host actually has:
 ## Testing
 
 ```bash
-.venv/bin/python -m pytest                    # everything (~1.5 s)
+.venv/bin/python -m pytest                    # everything (~2.4 s bare, ~10 s with vision)
 .venv/bin/python -m pytest tests/unit         # fast, pure logic
 .venv/bin/python -m pytest tests/integration  # storage, cross-language contract
 .venv/bin/python -m pytest tests/e2e          # full pipeline

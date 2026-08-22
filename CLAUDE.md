@@ -15,7 +15,7 @@ Intended customer: municipalities and road agencies, starting in Yerevan.
 
 | Component | State |
 |---|---|
-| Processing core (`src/roadeye/`) | **Implemented, 331 tests passing** |
+| Processing core (`src/roadeye/`) | **Implemented, 333 tests passing** |
 | Collector (`apps/collector/`) | Scaffolded, **never run on a device** |
 | Detector | Real adapter + training pipeline built (M3). Bootstrap model trained on **Czech** RDD2022 data only |
 | Armenian data | **None** |
@@ -35,8 +35,12 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/roadeye validate <bundle> # inspect a survey without processing it
 ```
 
-The test suite runs in ~1.5 s and requires **no optional dependency**. Keep it that way:
-a suite that needs a GPU is a suite that stops being run.
+271 of the 333 tests require **no optional dependency** and run in ~2.4 s; the rest are
+`importorskip`-guarded and skip on a bare install. Keep it that way: a suite that needs a
+GPU is a suite that stops being run.
+
+`ruff check`, `ruff format --check` and `mypy` must all be clean across `.` — the mypy
+scope covers `src/`, `ml/`, `services/` and `scripts/`, not just the domain layer.
 
 ## The constraint that shapes everything
 

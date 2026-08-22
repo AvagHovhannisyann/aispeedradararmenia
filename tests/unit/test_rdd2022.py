@@ -115,6 +115,18 @@ class TestParsing:
         xml = REAL_ANNOTATION.replace(b"<ymin>405</ymin>", b"<ymin>abc</ymin>")
         assert parse_voc(xml, image_id="Czech_000006").boxes == []
 
+    def test_absent_coordinate_is_dropped(self):
+        """A missing element is a different code path from an unparseable one, and the
+        box must not be half-built from the three coordinates that did survive."""
+        xml = REAL_ANNOTATION.replace(b"<ymin>405</ymin>", b"")
+        assert parse_voc(xml, image_id="Czech_000006").boxes == []
+
+    def test_absent_bndbox_is_dropped(self):
+        xml = REAL_ANNOTATION.replace(b"<bndbox>", b"<notabndbox>").replace(
+            b"</bndbox>", b"</notabndbox>"
+        )
+        assert parse_voc(xml, image_id="Czech_000006").boxes == []
+
     def test_unparseable_id_does_not_crash(self):
         ann = parse_voc(REAL_ANNOTATION, image_id="weird-name")
         assert ann.country == "unknown"

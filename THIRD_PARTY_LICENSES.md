@@ -17,8 +17,8 @@ licence. See `docs/LICENSE_AUDIT.md`.
 |---|---|---|---|
 | **pydantic** | ≥2.5,<3 | MIT | Only hard runtime dependency |
 
-That is the entire required dependency set. The processing core, its CLI and its 201
-tests run on Python's standard library plus pydantic.
+That is the entire required dependency set. The processing core, its CLI and 271 of its
+333 tests run on Python's standard library plus pydantic.
 
 ## Optional extras (declared, not required)
 
