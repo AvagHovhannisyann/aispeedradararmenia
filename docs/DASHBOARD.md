@@ -82,8 +82,15 @@ that is not a licence detail to be discovered later.
 
 So the basemap is **off by default**. Street context comes instead from the road network
 `roadeye roads` already downloaded for map matching — the same ODbL data, held locally,
-drawn as lines. The dashboard therefore works on a laptop with no internet at all, which
-is what offline-first is supposed to mean.
+drawn as lines. No tile server is contacted, and none needs to be.
+
+**That fixes the tiles and not the library.** MapLibre itself is still fetched from unpkg
+at view time ([ADR-010](DECISIONS/ADR-010-dashboard-without-a-build-step.md)), so with no
+internet the page loads and the map does not. An earlier version of this file claimed the
+dashboard "works on a laptop with no internet at all"; it does not, and the ADR said so
+plainly while this page contradicted it. Vendoring MapLibre is permitted by its BSD-3
+licence and remains the open item — it is ~800 KB and one commit, and it is the difference
+between offline-first as a posture and as a fact.
 
 `?tiles=1` turns the OSM raster basemap on for local use, and the attribution bar then
 says plainly what it is.
