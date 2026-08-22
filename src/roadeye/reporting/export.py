@@ -22,6 +22,15 @@ from pathlib import Path
 from typing import Any
 
 from roadeye.domain.models import Defect
+from roadeye.map_matching.osm import OSM_ATTRIBUTION
+
+#: Attribution text keyed by the ``RoadSegmentRef.source`` that obliges it. Derived from
+#: the data rather than passed in by the caller, because an attribution someone has to
+#: remember to add is one that eventually gets forgotten — and one added unconditionally
+#: is noise that teaches readers to skip the field.
+ATTRIBUTION_BY_SOURCE = {
+    "osm": f"Road network data {OSM_ATTRIBUTION}, ODbL.",
+}
 
 #: Column order for CSV export. Stable: municipal users build spreadsheets on it.
 CSV_COLUMNS = [
@@ -83,8 +92,25 @@ def _row(defect: Defect) -> dict[str, Any]:
     }
 
 
+def required_attribution(defects: Iterable[Defect]) -> str | None:
+    """Attribution the defects themselves oblige, or ``None`` if they oblige nothing.
+
+    A defect that was never map-matched leans on no external database, so the export
+    carries no attribution. One matched against OpenStreetMap does, and ODbL says so.
+    """
+    sources = {d.road.source for d in defects if d.road is not None}
+    notices = [ATTRIBUTION_BY_SOURCE[s] for s in sorted(sources) if s in ATTRIBUTION_BY_SOURCE]
+    return " ".join(notices) or None
+
+
 def to_csv(defects: Sequence[Defect], path: str | Path) -> Path:
-    """Write defects to CSV."""
+    """Write defects to CSV, plus an attribution sidecar when one is owed.
+
+    CSV has nowhere to put a licence notice — no header, no metadata block — so when the
+    rows carry OSM-derived road references the obligation is written to
+    ``<name>.ATTRIBUTION.txt`` next to the file. A spreadsheet emailed to a municipality
+    travels alone otherwise, and the obligation travels with the data, not with us.
+    """
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8", newline="") as fh:
@@ -92,6 +118,15 @@ def to_csv(defects: Sequence[Defect], path: str | Path) -> Path:
         writer.writeheader()
         for defect in defects:
             writer.writerow(_row(defect))
+
+    notice = required_attribution(defects)
+    sidecar = out.with_suffix(out.suffix + ".ATTRIBUTION.txt")
+    if notice:
+        sidecar.write_text(notice + "\n", encoding="utf-8")
+    elif sidecar.exists():
+        # A re-export with no matched defects must not leave the previous run's notice
+        # sitting next to data it no longer describes.
+        sidecar.unlink()
     return out
 
 
@@ -103,11 +138,14 @@ def to_geojson(
 ) -> dict[str, Any]:
     """Build a GeoJSON FeatureCollection, optionally writing it to ``path``.
 
-    ``attribution`` should name any external data the export leans on. When defect
-    positions have been map-matched against OpenStreetMap geometry, ODbL attribution
-    belongs in the exported file itself, not only in the web UI — the file outlives the
-    session that produced it.
+    ``attribution`` names any external data the export leans on. Left as ``None`` it is
+    derived from the defects via :func:`required_attribution`, which is the right default
+    in both directions: an export of map-matched defects carries the ODbL notice into the
+    file, where it outlives the session that produced it, and an export that touched no
+    external database does not claim to have used one.
     """
+    if attribution is None:
+        attribution = required_attribution(defects)
     features = []
     for defect in defects:
         props = _row(defect)

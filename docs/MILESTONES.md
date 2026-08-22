@@ -104,15 +104,25 @@ Armenian data.* See `docs/REVIEW_LOOP.md`.
 
 ---
 
-## M5 — Defect-level pipeline + API
+## M5 — Defect-level pipeline + API 🔄 IN PROGRESS
 
-- [ ] Map matching against OSM geometry, with attribution compliance
-- [ ] `ROAD_SEGMENT_MATCHED` location method
-- [ ] FastAPI local API over domain concepts
-- [ ] Face/plate blurring (licence-audited detector)
+**Done:**
+- [x] Map matching against OSM geometry — `roadeye roads`, `roadeye match-roads`
+- [x] `ROAD_SEGMENT_MATCHED` location method, with uncertainty that never shrinks
+- [x] Attribution derived from the data, in GeoJSON and as a CSV sidecar
+- [x] Match quality (`match_distance_m`, `heading_delta_deg`) persisted — storage
+      schema v2, with an additive migration
+- [x] FastAPI local API over domain concepts (delivered early with M4's review UI)
+
+**Remaining:**
+- [ ] Face/plate blurring (licence-audited detector) — the last thing keeping evidence
+      images on the local machine
+- [ ] Retention policy enforcement + `Anonymizer` interface (carried from M4)
+- [ ] Run map matching on a **real Yerevan survey**, which does not exist until M1
 
 **Acceptance:** defects are assigned to the correct road segment; nothing leaves the
-laptop unblurred.
+laptop unblurred. *Matching is verified on synthetic geometry only — thresholds are
+defensible starting values, not tuned results. See `docs/MAP_MATCHING.md`.*
 
 ---
 

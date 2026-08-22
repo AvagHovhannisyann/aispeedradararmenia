@@ -22,6 +22,7 @@ from roadeye.geolocation.geodesy import (
     interpolate_position,
     normalize_bearing,
     point_to_segment_distance_m,
+    project_onto_segment,
 )
 
 YEREVAN = LatLon(40.18231, 44.51491)
@@ -193,9 +194,77 @@ class TestPointToSegment:
         d = point_to_segment_distance_m(far, LatLon(40.0, 44.0), LatLon(40.0, 44.001))
         assert d == pytest.approx(haversine_m(far, LatLon(40.0, 44.001)), rel=0.05)
 
+    def test_clamps_behind_the_start(self):
+        """Regression. The along-track term is ``acos(...)``, which cannot be negative,
+        so a point *behind* the start used to be indistinguishable from one the same
+        distance ahead. A point 852 m behind an 852 m segment reported as 0.10 m from
+        it: collinear with the road, so the perpendicular distance is ~0, and the
+        endpoint clamp never fired because the unsigned along-track was within length.
+
+        A confident, precise, wrong answer — the worst failure mode available to map
+        matching, and the reason the sign of the along-track distance is load-bearing.
+        """
+        start, end = LatLon(40.0, 44.0), LatLon(40.0, 44.01)
+        behind = LatLon(40.0, 43.99)
+        d = point_to_segment_distance_m(behind, start, end)
+        assert d == pytest.approx(haversine_m(behind, start), rel=1e-6)
+        assert d > 800.0, "a point behind the segment start is not on the segment"
+
+    def test_clamps_far_behind_the_start(self):
+        """The same bug clamped to the *far* endpoint once the unsigned along-track
+        exceeded the segment length, reporting the distance to the wrong end."""
+        start, end = LatLon(40.0, 44.0), LatLon(40.0, 44.01)
+        far_behind = LatLon(40.0, 43.95)
+        d = point_to_segment_distance_m(far_behind, start, end)
+        assert d == pytest.approx(haversine_m(far_behind, start), rel=1e-6)
+
     def test_degenerate_segment(self):
         p, s = LatLon(40.001, 44.0), LatLon(40.0, 44.0)
         assert point_to_segment_distance_m(p, s, s) == pytest.approx(haversine_m(p, s))
+
+
+class TestProjectOntoSegment:
+    """The projection is what map matching snaps a defect onto, so the returned point
+    matters as much as the distance."""
+
+    def test_snaps_to_the_perpendicular_foot(self):
+        start, end = LatLon(40.0, 44.0), LatLon(40.0, 44.01)
+        p = project_onto_segment(LatLon(40.0001, 44.005), start, end)
+        assert p.point.lat == pytest.approx(40.0, abs=1e-6)
+        assert p.point.lon == pytest.approx(44.005, abs=1e-6)
+        assert p.fraction == pytest.approx(0.5, abs=0.01)
+        assert p.distance_m == pytest.approx(11.1, abs=1.0)
+
+    def test_snaps_to_the_endpoints_when_outside(self):
+        start, end = LatLon(40.0, 44.0), LatLon(40.0, 44.01)
+        assert project_onto_segment(LatLon(40.0, 43.99), start, end).point == start
+        assert project_onto_segment(LatLon(40.0, 44.02), start, end).point == end
+
+    def test_fraction_stays_within_the_segment(self):
+        start, end = LatLon(40.0, 44.0), LatLon(40.0, 44.01)
+        for lon in (43.9, 43.999, 44.0, 44.005, 44.01, 44.02, 44.5):
+            p = project_onto_segment(LatLon(40.0002, lon), start, end)
+            assert 0.0 <= p.fraction <= 1.0, lon
+            assert 0.0 <= p.along_track_m <= haversine_m(start, end) + 1e-6, lon
+
+    def test_distance_agrees_with_the_snapped_point(self):
+        """The two outputs must describe the same geometry: if they disagree, a defect
+        is drawn in one place and reported as being another distance away."""
+        start, end = LatLon(40.18, 44.51), LatLon(40.182, 44.514)
+        for point in (
+            LatLon(40.1805, 44.5115),
+            LatLon(40.1795, 44.5105),
+            LatLon(40.179, 44.508),
+            LatLon(40.183, 44.516),
+        ):
+            p = project_onto_segment(point, start, end)
+            assert p.distance_m == pytest.approx(haversine_m(point, p.point), abs=0.05)
+
+    def test_degenerate_segment(self):
+        s = LatLon(40.0, 44.0)
+        p = project_onto_segment(LatLon(40.001, 44.0), s, s)
+        assert p.point == s
+        assert p.distance_m == pytest.approx(haversine_m(LatLon(40.001, 44.0), s))
 
 
 class TestBoundingBox:

@@ -35,19 +35,25 @@ rule() { printf '\n\033[1m%s\033[0m\n' "── $1 ──────────
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-rule "1/5  Run the test suite"
+rule "1/6  Run the test suite"
 $PY -m pytest -q
 
-rule "2/5  Generate a synthetic Yerevan drive"
+rule "2/6  Generate a synthetic Yerevan drive"
 $PY scripts/make_demo_survey.py "$OUT/survey"
 
-rule "3/5  Validate the survey bundle"
+rule "3/6  Validate the survey bundle"
 $ROADEYE validate "$OUT/survey"
 
-rule "4/5  Process it into defects"
+rule "4/6  Process it into defects"
 $ROADEYE process "$OUT/survey" --db "$OUT/demo.db"
 
-rule "5/5  Export for a municipality"
+rule "5/6  Assign each defect to a street"
+# Synthetic streets, not OpenStreetMap: OSM is ODbL and share-alike applies to data,
+# so no real geometry is committed here (docs/LICENSE_AUDIT.md, L-3).
+$PY scripts/make_demo_roads.py --output "$OUT/roads.json"
+$ROADEYE match-roads --db "$OUT/demo.db" --roads "$OUT/roads.json"
+
+rule "6/6  Export for a municipality"
 $ROADEYE export --db "$OUT/demo.db" --geojson "$OUT/demo.geojson" --csv "$OUT/demo.csv"
 
 rule "Done"
@@ -65,10 +71,12 @@ it out or hides it in the file explorer. That is normal; the files are there.
   index.html     the map page (served by the command above)
   demo.geojson   raw defect data — also opens at https://geojson.io
   demo.csv       the same data as a spreadsheet
+  roads.json     the synthetic street network the defects were matched against
   demo.db        SQLite database, inspect with:
                    sqlite3 $OUT/demo.db "SELECT defect_id, damage_class, confidence, uncertainty_m, status FROM defects LIMIT 5;"
 
-Reminder: the detector is FAKE. Those markers are synthetic noise placed on a
-real map. This run proves the pipeline works; it proves nothing about finding
-potholes. A real detector arrives at milestone M3 (see docs/MILESTONES.md).
+Reminder: the detector is FAKE and those street names are INVENTED. The markers
+are synthetic noise placed on a real map, matched against streets that do not
+exist. This run proves the pipeline works end to end; it proves nothing about
+finding potholes or about Yerevan. See docs/MILESTONES.md.
 EOF

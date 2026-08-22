@@ -268,6 +268,27 @@ Android first** if a suitable device is available.
 
 L-4 and L-5 are elaborated in `docs/PRIVACY.md`.
 
+### L-3 is now live, and what we did about it
+
+Map matching shipped in M5, so OSM-derived identifiers exist in the defect database from
+today rather than hypothetically. L-3 is still unanswered; these four decisions hold the
+question open instead of quietly settling it.
+
+1. **No OSM data is committed to this repository.** Extracts are fetched at run time into
+   the git-ignored `data/roads/`, and the test suite uses invented geometry. A cached
+   extract inside a proprietary tree would create the ambiguity, not merely risk it.
+2. **`RoadSegmentRef` stays a separable reference**, not denormalised columns, so
+   OSM-derived identifiers can be detached if L-3 resolves unfavourably.
+3. **Attribution is derived from the data, never remembered by a caller.** A defect
+   carrying `road.source == "osm"` puts the ODbL notice into the export itself — a
+   top-level member in GeoJSON, a `.ATTRIBUTION.txt` sidecar beside a CSV, because a
+   spreadsheet emailed to a municipality travels alone.
+4. **An export that touched no OSM data carries no OSM notice.** Attributing
+   unconditionally would be a false statement about provenance in the one field whose
+   whole job is provenance.
+
+Details in `docs/MAP_MATCHING.md`.
+
 ---
 
 ## Maintenance rule

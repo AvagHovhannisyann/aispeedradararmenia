@@ -168,15 +168,24 @@ map.on("load", () => {
     const p = e.features[0].properties;
     const c = e.features[0].geometry.coordinates;
     const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+    // The street is the first thing a municipal reader looks for — a crew is
+    // dispatched to a road, not to a decimal coordinate. Shown with how far the
+    // defect was from that centreline, because "on Mashtots" and "19 m from
+    // Mashtots and nothing else was near" are different claims.
+    const street = p.road_name
+      ? row("street", p.road_name + (p.road_source ? ` <span style="color:#999">(${p.road_source})</span>` : ""))
+      : "";
     new maplibregl.Popup({ maxWidth: "300px" })
       .setLngLat(c)
       .setHTML(
         `<b>${p.damage_class} &middot; ${p.defect_id}</b><dl>` +
+        street +
         row("confidence", (p.confidence * 100).toFixed(0) + "%") +
         row("status", p.status) +
         row("severity", p.severity + " (" + p.severity_source + ")") +
         row("position", c[1].toFixed(6) + ", " + c[0].toFixed(6)) +
         row("uncertainty", "&plusmn;" + p.location_uncertainty_m + " m") +
+        row("located by", p.location_method) +
         row("observations", p.observation_count) +
         row("first seen", String(p.first_seen).replace("T", " ").replace("Z", "")) +
         row("model", p.model_id) +

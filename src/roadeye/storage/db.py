@@ -41,7 +41,7 @@ from roadeye.domain.models import (
 from roadeye.geolocation.geodesy import LatLon, bounding_box, haversine_m
 
 #: Storage schema version, tracked in the ``meta`` table. Bump alongside a migration.
-STORAGE_SCHEMA_VERSION = 1
+STORAGE_SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -106,6 +106,11 @@ CREATE TABLE IF NOT EXISTS defects (
     road_source         TEXT,
     road_segment_id     TEXT,
     road_name           TEXT,
+    -- How good the map match was. Stored because "this defect is on Mashtots Avenue"
+    -- and "this defect is 19 m from Mashtots Avenue and nothing else was nearby" are
+    -- very different claims, and only one of them should reach a work order.
+    road_match_distance_m   REAL,
+    road_heading_delta_deg  REAL,
     confidence          REAL NOT NULL,
     severity            TEXT NOT NULL,
     severity_source     TEXT NOT NULL,
@@ -254,8 +259,19 @@ class Database:
 
     # ------------------------------------------------------------------ migration
 
+    #: Columns added after v1, as ``(table, column, definition)``. ``CREATE TABLE IF NOT
+    #: EXISTS`` does nothing to a table that already exists, so a new column reaches an
+    #: existing database only through an explicit ``ALTER``. Additive migrations are
+    #: listed here rather than written as one-off code so that adding a column and
+    #: migrating to it are the same edit.
+    _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+        ("defects", "road_match_distance_m", "REAL"),
+        ("defects", "road_heading_delta_deg", "REAL"),
+    )
+
     def _migrate(self) -> None:
         self._conn.executescript(_SCHEMA)
+
         cur = self._conn.execute("SELECT value FROM meta WHERE key = 'schema_version'")
         row = cur.fetchone()
         if row is None:
@@ -264,13 +280,26 @@ class Database:
                 (str(STORAGE_SCHEMA_VERSION),),
             )
             self._conn.commit()
-        else:
-            found = int(row["value"])
-            if found > STORAGE_SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"database schema version {found} is newer than this build "
-                    f"supports ({STORAGE_SCHEMA_VERSION}); upgrade RoadEye"
-                )
+            return
+
+        found = int(row["value"])
+        if found > STORAGE_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"database schema version {found} is newer than this build "
+                f"supports ({STORAGE_SCHEMA_VERSION}); upgrade RoadEye"
+            )
+        if found == STORAGE_SCHEMA_VERSION:
+            return
+
+        for table, column, definition in self._ADDED_COLUMNS:
+            existing = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        self._conn.execute(
+            "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+            (str(STORAGE_SCHEMA_VERSION),),
+        )
+        self._conn.commit()
 
     # -------------------------------------------------------------------- writers
 
@@ -367,10 +396,11 @@ class Database:
                     """
                     INSERT INTO defects (defect_id, schema_version, damage_class, lat, lon,
                         location_method, uncertainty_m, road_source, road_segment_id, road_name,
+                        road_match_distance_m, road_heading_delta_deg,
                         confidence, severity, severity_source, status, trend, observation_count,
                         survey_ids_json, first_seen, last_seen, representative_frame_id,
                         representative_image_path, model_id, processing_run_id, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     -- Every mutable column must be listed here. A column omitted is
                     -- silently discarded on write: the caller sees success, the
                     -- review log records the change, and the defect keeps its old
@@ -388,6 +418,8 @@ class Database:
                         road_source=excluded.road_source,
                         road_segment_id=excluded.road_segment_id,
                         road_name=excluded.road_name,
+                        road_match_distance_m=excluded.road_match_distance_m,
+                        road_heading_delta_deg=excluded.road_heading_delta_deg,
                         confidence=excluded.confidence,
                         severity=excluded.severity,
                         severity_source=excluded.severity_source,
@@ -413,6 +445,8 @@ class Database:
                         d.road.source if d.road else None,
                         d.road.segment_id if d.road else None,
                         d.road.name if d.road else None,
+                        d.road.match_distance_m if d.road else None,
+                        d.road.heading_delta_deg if d.road else None,
                         d.confidence,
                         d.severity.value,
                         d.severity_source.value,
@@ -685,6 +719,23 @@ class Database:
             for r in cur
         ]
 
+    def representative_headings(self) -> dict[str, float]:
+        """``defect_id`` -> vehicle heading at its representative frame, where known.
+
+        Map matching needs to know which way the vehicle was pointing: at a crossroads
+        the nearest centreline is often the street the survey never drove. Defects whose
+        frame recorded no heading are simply absent, and match on distance alone.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT d.defect_id AS defect_id, f.heading_deg AS heading_deg
+            FROM defects d
+            JOIN frames f ON f.frame_id = d.representative_frame_id
+            WHERE f.heading_deg IS NOT NULL
+            """
+        )
+        return {row["defect_id"]: float(row["heading_deg"]) for row in rows}
+
     def reviews_for(self, defect_id: str) -> list[sqlite3.Row]:
         return list(
             self._conn.execute(
@@ -716,10 +767,19 @@ class Database:
 
         road = None
         if row["road_segment_id"]:
+            keys = row.keys()
             road = RoadSegmentRef(
                 source=row["road_source"] or "unknown",
                 segment_id=row["road_segment_id"],
                 name=row["road_name"],
+                # Guarded: a v1 database opened read-only has no such column, and a
+                # missing match quality is better than a crash on someone's pilot data.
+                match_distance_m=(
+                    row["road_match_distance_m"] if "road_match_distance_m" in keys else None
+                ),
+                heading_delta_deg=(
+                    row["road_heading_delta_deg"] if "road_heading_delta_deg" in keys else None
+                ),
             )
         return Defect(
             defect_id=row["defect_id"],

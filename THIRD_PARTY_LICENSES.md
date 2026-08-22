@@ -17,8 +17,10 @@ licence. See `docs/LICENSE_AUDIT.md`.
 |---|---|---|---|
 | **pydantic** | ≥2.5,<3 | MIT | Only hard runtime dependency |
 
-That is the entire required dependency set. The processing core, its CLI and 271 of its
-333 tests run on Python's standard library plus pydantic.
+That is the entire required dependency set. The processing core, its CLI and 330 of its
+392 tests run on Python's standard library plus pydantic. Map matching added no
+dependency: OSM XML is parsed with `xml.etree`, Overpass with `json` and `urllib`, and
+the road-network file is `gzip` + `json`.
 
 ## Optional extras (declared, not required)
 

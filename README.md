@@ -14,12 +14,13 @@ Built for Armenian municipalities, on a zero software budget.
 
 | Component | State |
 |---|---|
-| Processing core | Implemented — 333 tests, no GPU/ffmpeg/network needed |
+| Processing core | Implemented — 392 tests, no GPU/ffmpeg/network needed |
 | Survey collector (Expo) | Scaffolded, **never run on a device** |
 | Road-damage detector | Adapter + training pipeline built. Bootstrap model trained on **Czech** data only — not an Armenian detector |
 | Armenian dataset | **None** |
 | Human review loop | Implemented — review UI, corrections, training-data export |
-| Dashboard / map matching / anonymisation | Not built |
+| Map matching | Implemented — OSM geometry, street names, ODbL attribution. Verified on synthetic geometry only |
+| Dashboard / anonymisation | Not built |
 
 The CLI prints a warning whenever the fake detector runs. Any output it produces
 describes nothing about any road.
@@ -143,6 +144,7 @@ hosted municipal dashboard. It is rejected for the shipping path, not merely not
 | [ML_STRATEGY](docs/ML_STRATEGY.md) | Dataset, leakage, provenance |
 | [METRICS](docs/METRICS.md) | Model metrics vs the ones that matter |
 | [REVIEW_LOOP](docs/REVIEW_LOOP.md) | How human corrections become training data |
+| [MAP_MATCHING](docs/MAP_MATCHING.md) | Turning a coordinate into a street name |
 | [TRAINING](docs/TRAINING.md) | Getting the data, and where to actually train |
 | [PRIVACY](docs/PRIVACY.md) | People in the footage |
 | [COLLECTION_PROTOCOL](docs/COLLECTION_PROTOCOL.md) | How to drive a survey |
@@ -156,7 +158,7 @@ hosted municipal dashboard. It is rejected for the shipping path, not merely not
 src/roadeye/       processing core (implemented)
 apps/collector/    Expo survey collector
 apps/dashboard/    React + MapLibre municipal UI      [M6]
-services/api/      FastAPI local API                  [M5]
+services/api/      FastAPI local API + review UI
 ml/                datasets, training, experiments
 tests/             unit · integration · e2e
 docs/              research, decisions, protocol
