@@ -1,0 +1,26 @@
+{
+  "name": "RoadEye",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  // Installs RoadEye and its dev tools when the Codespace is created, so the first
+  // thing anyone types is `./scripts/demo.sh` rather than a setup sequence.
+  // Only the core + dev extras: no torch, no ffmpeg. The whole pipeline and test
+  // suite run without them, which is what keeps this container small and fast.
+  "postCreateCommand": "pip install --upgrade pip && pip install -e '.[dev]'",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      }
+    }
+  }
+}
