@@ -21,7 +21,7 @@ from roadeye.domain.enums import DamageClass, DefectStatus, LocationMethod, Seve
 from roadeye.domain.models import DefectObservation, GeoPoint
 from roadeye.geolocation.geodesy import LatLon, destination_point
 
-BASE = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.timezone.utc)
+BASE = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.UTC)
 ORIGIN = LatLon(40.18231, 44.51491)
 
 
@@ -57,9 +57,7 @@ def candidate(
 
 class TestBasicClustering:
     def test_nearby_same_class_merge(self):
-        clusters = cluster_candidates(
-            [candidate("a"), candidate("b", metres_east=3.0, seconds=1)]
-        )
+        clusters = cluster_candidates([candidate("a"), candidate("b", metres_east=3.0, seconds=1)])
         assert len(clusters) == 1
         assert len(clusters[0]) == 2
 
@@ -120,8 +118,7 @@ class TestChainingRegression:
         cands = [candidate(f"c{i:03d}", metres_east=i * 5.0, seconds=i) for i in range(100)]
         clusters = cluster_candidates(cands)
         assert len(clusters) > 10, (
-            f"chaining regression: 500 m of observations collapsed into "
-            f"{len(clusters)} cluster(s)"
+            f"chaining regression: 500 m of observations collapsed into {len(clusters)} cluster(s)"
         )
 
     def test_no_cluster_exceeds_the_extent_cap(self):
@@ -135,9 +132,7 @@ class TestChainingRegression:
                 continue
             from roadeye.geolocation.geodesy import haversine_m
 
-            spread = max(
-                haversine_m(a, b) for a in positions for b in positions
-            )
+            spread = max(haversine_m(a, b) for a in positions for b in positions)
             # Diameter may reach twice the centroid radius in the worst case.
             assert spread <= config.max_cluster_extent_m * 2 + 1e-6
 
@@ -158,7 +153,10 @@ class TestUncertaintyHandling:
             [candidate("a", uncertainty_m=1.0), candidate("b", metres_east=20.0, uncertainty_m=1.0)]
         )
         vague = cluster_candidates(
-            [candidate("a", uncertainty_m=12.0), candidate("b", metres_east=20.0, uncertainty_m=12.0)]
+            [
+                candidate("a", uncertainty_m=12.0),
+                candidate("b", metres_east=20.0, uncertainty_m=12.0),
+            ]
         )
         assert len(precise) == 2
         assert len(vague) == 1
@@ -245,9 +243,7 @@ class TestBuildDefects:
         assert [d.defect_id for d in defects] == ["survey42_00001", "survey42_00002"]
 
     def test_provenance_is_attached(self):
-        defects, _ = build_defects(
-            [candidate("a")], model_id="m1", processing_run_id="run7"
-        )
+        defects, _ = build_defects([candidate("a")], model_id="m1", processing_run_id="run7")
         assert defects[0].model_id == "m1"
         assert defects[0].processing_run_id == "run7"
 

@@ -26,8 +26,8 @@ Design rules encoded here:
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence
 
 from roadeye.domain.enums import LocationMethod
 from roadeye.geolocation.geodesy import (
@@ -144,7 +144,7 @@ class LocationTrack:
         *,
         max_accuracy_m: float | None = DEFAULT_MAX_ACCURACY_M,
         max_gap_s: float = DEFAULT_MAX_GAP_S,
-    ) -> "LocationTrack":
+    ) -> LocationTrack:
         """Clean, filter and sort raw fixes.
 
         Handles, without raising: out-of-order records, duplicate timestamps,
@@ -167,10 +167,14 @@ class LocationTrack:
             if not (-90.0 <= s.lat <= 90.0 and -180.0 <= s.lon <= 180.0):
                 stats.dropped_out_of_range += 1
                 continue
-            if max_accuracy_m is not None and s.accuracy_m is not None:
-                if s.accuracy_m != s.accuracy_m or s.accuracy_m > max_accuracy_m:
-                    stats.dropped_low_accuracy += 1
-                    continue
+            # NaN accuracy is treated as unusable, same as an out-of-range value.
+            if (
+                max_accuracy_m is not None
+                and s.accuracy_m is not None
+                and (s.accuracy_m != s.accuracy_m or s.accuracy_m > max_accuracy_m)
+            ):
+                stats.dropped_low_accuracy += 1
+                continue
 
             if previous_t is not None and s.t_epoch_ms < previous_t:
                 stats.reordered = True
@@ -234,7 +238,7 @@ class LocationTrack:
         """Sum of great-circle hops. A rough survey length, not an odometer reading."""
         return sum(
             haversine_m(a.position, b.position)
-            for a, b in zip(self._samples, self._samples[1:])
+            for a, b in zip(self._samples, self._samples[1:], strict=False)
         )
 
     # --------------------------------------------------------------- interpolation
@@ -273,9 +277,13 @@ class LocationTrack:
         uncertainty = self._uncertainty(a, b, alpha, gap_s)
 
         trustworthy = gap_s <= self.max_gap_s
-        warning = None if trustworthy else (
-            f"GPS gap of {gap_s:.1f}s exceeds maximum {self.max_gap_s:.1f}s; "
-            "position is an unverified straight-line guess."
+        warning = (
+            None
+            if trustworthy
+            else (
+                f"GPS gap of {gap_s:.1f}s exceeds maximum {self.max_gap_s:.1f}s; "
+                "position is an unverified straight-line guess."
+            )
         )
 
         return InterpolatedLocation(
@@ -358,9 +366,7 @@ class LocationTrack:
         return None
 
     @staticmethod
-    def _uncertainty(
-        a: LocationSample, b: LocationSample, alpha: float, gap_s: float
-    ) -> float:
+    def _uncertainty(a: LocationSample, b: LocationSample, alpha: float, gap_s: float) -> float:
         """Position uncertainty in metres.
 
         Two contributions, added rather than combined in quadrature — deliberately

@@ -22,7 +22,7 @@ from roadeye.domain.enums import (
 )
 from roadeye.domain.models import BoundingBox, Defect, GeoPoint, ModelVersion
 
-NOW = dt.datetime(2026, 8, 18, tzinfo=dt.timezone.utc)
+NOW = dt.datetime(2026, 8, 18, tzinfo=dt.UTC)
 
 
 def geo(**kw) -> GeoPoint:

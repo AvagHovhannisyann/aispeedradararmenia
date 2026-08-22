@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "RoadEye Collector",
+    "slug": "roadeye-collector",
+    "version": "0.1.0",
+    "orientation": "landscape",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "RoadEye records forward-facing video of the road surface to detect road damage.",
+        "NSLocationWhenInUseUsageDescription": "RoadEye records your location while surveying so detected road damage can be placed on a map.",
+        "NSMicrophoneUsageDescription": "Video recording may capture audio. RoadEye does not analyse audio and it can be disabled in settings."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RoadEye records forward-facing video of the road surface to detect road damage."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RoadEye records your location while surveying so detected road damage can be placed on a map."
+        }
+      ]
+    ]
+  }
+}

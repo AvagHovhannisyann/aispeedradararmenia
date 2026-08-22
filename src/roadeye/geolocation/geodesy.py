@@ -143,7 +143,9 @@ def cross_track_distance_m(point: LatLon, seg_start: LatLon, seg_end: LatLon) ->
         return 0.0
     theta13 = math.radians(initial_bearing_deg(seg_start, point))
     theta12 = math.radians(initial_bearing_deg(seg_start, seg_end))
-    return abs(math.asin(max(-1.0, min(1.0, math.sin(d13) * math.sin(theta13 - theta12)))) * EARTH_RADIUS_M)
+    return abs(
+        math.asin(max(-1.0, min(1.0, math.sin(d13) * math.sin(theta13 - theta12)))) * EARTH_RADIUS_M
+    )
 
 
 def point_to_segment_distance_m(point: LatLon, seg_start: LatLon, seg_end: LatLon) -> float:
@@ -187,10 +189,7 @@ def bounding_box(center: LatLon, radius_m: float) -> tuple[float, float, float, 
     dlat = math.degrees(radius_m / EARTH_RADIUS_M)
     # Guard against the cos() term collapsing near the poles.
     cos_lat = math.cos(math.radians(center.lat))
-    if abs(cos_lat) < 1e-9:
-        dlon = 180.0
-    else:
-        dlon = math.degrees(radius_m / (EARTH_RADIUS_M * cos_lat))
+    dlon = 180.0 if abs(cos_lat) < 1e-9 else math.degrees(radius_m / (EARTH_RADIUS_M * cos_lat))
     return (
         max(-90.0, center.lat - dlat),
         min(90.0, center.lat + dlat),

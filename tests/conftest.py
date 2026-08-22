@@ -28,7 +28,7 @@ LON_PER_10M = 0.000118
 
 @pytest.fixture
 def survey_start() -> dt.datetime:
-    return dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.timezone.utc)
+    return dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.UTC)
 
 
 @pytest.fixture

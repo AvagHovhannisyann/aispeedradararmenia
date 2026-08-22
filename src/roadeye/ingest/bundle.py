@@ -30,10 +30,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from roadeye.geolocation.timesync import LocationSample, LocationTrack
 
@@ -140,7 +141,7 @@ def iter_jsonl(path: Path, issues: list[BundleIssue]) -> Iterator[dict[str, Any]
     bad = 0
     try:
         with path.open("r", encoding="utf-8") as fh:
-            for lineno, line in enumerate(fh, 1):
+            for line in fh:
                 line = line.strip()
                 if not line:
                     continue
@@ -159,9 +160,7 @@ def iter_jsonl(path: Path, issues: list[BundleIssue]) -> Iterator[dict[str, Any]
         issues.append(BundleIssue("error", f"{path.name} is not valid UTF-8: {exc}"))
         return
     if bad:
-        issues.append(
-            BundleIssue("warning", f"{path.name}: skipped {bad} malformed line(s)")
-        )
+        issues.append(BundleIssue("warning", f"{path.name}: skipped {bad} malformed line(s)"))
 
 
 def _parse_location(obj: dict[str, Any]) -> LocationSample | None:
@@ -288,7 +287,9 @@ def load_bundle(
             raw_samples.append(sample)
     if unparsable:
         issues.append(
-            BundleIssue("warning", f"locations.jsonl: {unparsable} record(s) lacked usable lat/lon/t")
+            BundleIssue(
+                "warning", f"locations.jsonl: {unparsable} record(s) lacked usable lat/lon/t"
+            )
         )
 
     track = LocationTrack.from_samples(
@@ -298,13 +299,12 @@ def load_bundle(
     for note in track.stats.issues:
         issues.append(BundleIssue("warning", f"GPS: {note}"))
     if len(track) == 0:
-        issues.append(
-            BundleIssue("error", "no usable GPS fixes; defects cannot be geolocated")
-        )
+        issues.append(BundleIssue("error", "no usable GPS fixes; defects cannot be geolocated"))
 
     # ---- video ----
-    video_path: Path | None = root / "video.mp4"
-    if not video_path.exists():
+    candidate_video = root / "video.mp4"
+    video_path: Path | None = candidate_video
+    if not candidate_video.exists():
         issues.append(
             BundleIssue(
                 "warning",
@@ -353,17 +353,20 @@ def write_bundle_skeleton(
     route = {
         "schema_version": BUNDLE_SCHEMA_VERSION,
         "route_id": survey_id,
-        "started_at": started_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "started_at": started_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
         "recording_start_epoch_ms": recording_start_epoch_ms,
         "camera_facing": "back",
         "requested_video_quality": "1080p",
     }
     if ended_at is not None:
-        route["ended_at"] = ended_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        route["ended_at"] = ended_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
     (path / "route.json").write_text(json.dumps(route, indent=2), encoding="utf-8")
     (path / "manifest.json").write_text(
-        json.dumps({"schema_version": BUNDLE_SCHEMA_VERSION, "files": ["route.json", "locations.jsonl"]}, indent=2),
+        json.dumps(
+            {"schema_version": BUNDLE_SCHEMA_VERSION, "files": ["route.json", "locations.jsonl"]},
+            indent=2,
+        ),
         encoding="utf-8",
     )
     if device:

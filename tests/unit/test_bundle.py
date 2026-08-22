@@ -21,7 +21,7 @@ from roadeye.ingest.bundle import (
     write_bundle_skeleton,
 )
 
-START = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.timezone.utc)
+START = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.UTC)
 T0 = int(START.timestamp() * 1000)
 LAT, LON = 40.18231, 44.51491
 
@@ -93,7 +93,9 @@ class TestValidation:
 
     def test_missing_route_id(self, tmp_path: Path):
         path = make_bundle(tmp_path)
-        (path / "route.json").write_text(json.dumps({"started_at": START.isoformat()}), encoding="utf-8")
+        (path / "route.json").write_text(
+            json.dumps({"started_at": START.isoformat()}), encoding="utf-8"
+        )
         with pytest.raises(BundleError, match="route_id"):
             load_bundle(path)
 

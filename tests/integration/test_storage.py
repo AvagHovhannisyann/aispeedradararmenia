@@ -29,7 +29,7 @@ from roadeye.domain.models import (
 from roadeye.geolocation.geodesy import LatLon, destination_point
 from roadeye.storage.db import Database
 
-NOW = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.timezone.utc)
+NOW = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.UTC)
 ORIGIN = LatLon(40.18231, 44.51491)
 
 
@@ -108,8 +108,13 @@ class TestDefectRoundTrip:
     def test_upsert_updates_in_place(self, db: Database):
         db.upsert_defects([make_defect()])
         db.upsert_defects(
-            [make_defect(status=DefectStatus.VERIFIED, severity=Severity.HIGH,
-                         severity_source=SeveritySource.HUMAN)]
+            [
+                make_defect(
+                    status=DefectStatus.VERIFIED,
+                    severity=Severity.HIGH,
+                    severity_source=SeveritySource.HUMAN,
+                )
+            ]
         )
         assert db.count("defects") == 1
         loaded = db.get_defect("d1")

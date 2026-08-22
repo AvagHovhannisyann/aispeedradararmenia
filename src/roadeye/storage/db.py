@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any
 
 from roadeye.domain.enums import DamageClass, DefectStatus, LocationMethod, Severity, SeveritySource
 from roadeye.domain.models import (
@@ -205,7 +206,7 @@ CREATE TABLE IF NOT EXISTS processing_runs (
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _parse_iso(value: str) -> datetime:
@@ -231,7 +232,7 @@ class Database:
             self._conn.execute("PRAGMA journal_mode = WAL")
         self._migrate()
 
-    def __enter__(self) -> "Database":
+    def __enter__(self) -> Database:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -437,7 +438,13 @@ class Database:
         conn.execute(
             "INSERT OR REPLACE INTO defects_rtree (id, min_lat, max_lat, min_lon, max_lon) "
             "VALUES (?,?,?,?,?)",
-            (rowid, defect.location.lat, defect.location.lat, defect.location.lon, defect.location.lon),
+            (
+                rowid,
+                defect.location.lat,
+                defect.location.lat,
+                defect.location.lon,
+                defect.location.lon,
+            ),
         )
 
     def insert_observations(self, observations: Sequence[DefectObservation]) -> None:
@@ -640,8 +647,14 @@ class Database:
 
     def count(self, table: str) -> int:
         allowed = {
-            "surveys", "frames", "detections", "defects", "defect_observations",
-            "reviews", "model_versions", "processing_runs",
+            "surveys",
+            "frames",
+            "detections",
+            "defects",
+            "defect_observations",
+            "reviews",
+            "model_versions",
+            "processing_runs",
         }
         if table not in allowed:
             # Table names cannot be parameterised, so an allowlist is the only safe

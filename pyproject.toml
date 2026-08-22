@@ -66,6 +66,12 @@ select = ["E", "F", "I", "B", "UP", "SIM", "C4"]
 ignore = [
     "E501",  # line length is handled by the formatter
     "B008",  # FastAPI's Depends() idiom relies on calls in defaults
+    # UP042 wants `StrEnum` instead of `(str, Enum)`. Declined deliberately: these enum
+    # values are persisted in SQLite and written into CSV/GeoJSON exports, and the two
+    # base classes differ in what `str(Member)` returns. `(str, Enum)` is the
+    # well-understood pattern here and changing it risks the serialised contract for a
+    # purely cosmetic gain.
+    "UP042",
 ]
 
 [tool.mypy]

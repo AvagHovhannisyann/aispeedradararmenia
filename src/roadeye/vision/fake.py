@@ -14,7 +14,7 @@ across processes and machines.
 from __future__ import annotations
 
 import hashlib
-from typing import Sequence
+from collections.abc import Sequence
 
 from roadeye.domain.enums import DamageClass
 from roadeye.vision.base import FrameImage, RawDetection

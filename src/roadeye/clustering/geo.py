@@ -93,9 +93,7 @@ class ClusterCandidate:
         return self.observation.location.uncertainty_m
 
 
-def _effective_radius(
-    a: ClusterCandidate, b: ClusterCandidate, config: ClusteringConfig
-) -> float:
+def _effective_radius(a: ClusterCandidate, b: ClusterCandidate, config: ClusteringConfig) -> float:
     if not config.scale_radius_by_uncertainty:
         return config.merge_radius_m
     # Two fixes each uncertain by u could genuinely be the same point if they are
@@ -126,8 +124,8 @@ def _weighted_centroid(cluster: list[ClusterCandidate]) -> tuple[float, float, f
     """
     weights = [1.0 / (max(c.uncertainty_m, 0.5) ** 2) for c in cluster]
     total = sum(weights)
-    lat = sum(c.observation.location.lat * w for c, w in zip(cluster, weights)) / total
-    lon = sum(c.observation.location.lon * w for c, w in zip(cluster, weights)) / total
+    lat = sum(c.observation.location.lat * w for c, w in zip(cluster, weights, strict=True)) / total
+    lon = sum(c.observation.location.lon * w for c, w in zip(cluster, weights, strict=True)) / total
 
     combined = math.sqrt(1.0 / total)
     best = min(c.uncertainty_m for c in cluster)
@@ -181,9 +179,7 @@ def cluster_candidates(
             # permitted diameter? Measured from the centroid the cluster *would* have.
             lat, lon, _ = _weighted_centroid([*cluster, cand])
             hypothetical = LatLon(lat, lon)
-            extent = max(
-                haversine_m(hypothetical, m.position) for m in (*cluster, cand)
-            )
+            extent = max(haversine_m(hypothetical, m.position) for m in (*cluster, cand))
             if extent > cfg.max_cluster_extent_m:
                 continue
 
@@ -223,9 +219,7 @@ def build_defects(
     defects: list[Defect] = []
     linked: list[DefectObservation] = []
 
-    ordered_clusters = sorted(
-        clusters, key=lambda c: min(x.observation.observed_at for x in c)
-    )
+    ordered_clusters = sorted(clusters, key=lambda c: min(x.observation.observed_at for x in c))
 
     for i, cluster in enumerate(ordered_clusters, 1):
         defect_id = f"{defect_id_prefix}_{i:05d}"

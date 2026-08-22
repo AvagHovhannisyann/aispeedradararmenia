@@ -135,7 +135,7 @@ class GreedyIouTracker:
 
         used_tracks: set[int] = set()
         used_dets: set[int] = set()
-        for iou, ti, di in candidates:
+        for _iou, ti, di in candidates:
             if ti in used_tracks or di in used_dets:
                 continue
             used_tracks.add(ti)

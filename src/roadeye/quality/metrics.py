@@ -96,13 +96,7 @@ def blur_score(pixels: object) -> float | None:
     import numpy as np
 
     # Discrete 4-neighbour Laplacian on the interior.
-    lap = (
-        -4.0 * arr[1:-1, 1:-1]
-        + arr[:-2, 1:-1]
-        + arr[2:, 1:-1]
-        + arr[1:-1, :-2]
-        + arr[1:-1, 2:]
-    )
+    lap = -4.0 * arr[1:-1, 1:-1] + arr[:-2, 1:-1] + arr[2:, 1:-1] + arr[1:-1, :-2] + arr[1:-1, 2:]
     return float(np.var(lap))
 
 
@@ -133,10 +127,14 @@ def assess(pixels: object, config: QualityConfig | None = None) -> QualityResult
         scores["blur"] = round(blur, 3)
         if blur < cfg.blur_reject_below:
             verdict = FrameQuality.REJECTED
-            reasons.append(f"blur variance {blur:.1f} below reject threshold {cfg.blur_reject_below}")
+            reasons.append(
+                f"blur variance {blur:.1f} below reject threshold {cfg.blur_reject_below}"
+            )
         elif blur < cfg.blur_degrade_below:
             verdict = FrameQuality.DEGRADED
-            reasons.append(f"blur variance {blur:.1f} below degrade threshold {cfg.blur_degrade_below}")
+            reasons.append(
+                f"blur variance {blur:.1f} below degrade threshold {cfg.blur_degrade_below}"
+            )
 
     brightness = brightness_score(pixels)
     if brightness is not None:

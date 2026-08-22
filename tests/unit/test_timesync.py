@@ -79,9 +79,7 @@ class TestTrackCleaning:
         assert len(track) == 2
 
     def test_deduplicates_keeping_most_accurate(self):
-        track = LocationTrack.from_samples(
-            [sample(0, accuracy_m=20.0), sample(0, accuracy_m=3.0)]
-        )
+        track = LocationTrack.from_samples([sample(0, accuracy_m=20.0), sample(0, accuracy_m=3.0)])
         assert len(track) == 1
         assert track.samples[0].accuracy_m == 3.0
         assert track.stats.deduplicated == 1
@@ -136,7 +134,9 @@ class TestInterpolation:
 
     def test_clamped_uncertainty_grows_with_drift(self):
         """Being 30 s past the last fix must be reported as far worse than 1 s past."""
-        track = LocationTrack.from_samples([sample(0, speed_mps=10.0), sample(1, lon_off=0.000118, speed_mps=10.0)])
+        track = LocationTrack.from_samples(
+            [sample(0, speed_mps=10.0), sample(1, lon_off=0.000118, speed_mps=10.0)]
+        )
         near = track.locate(T0 + 1500)
         far = track.locate(T0 + 31_000)
         assert far.uncertainty_m > near.uncertainty_m * 5
@@ -157,8 +157,12 @@ class TestInterpolation:
 
 class TestUncertainty:
     def test_reflects_fix_accuracy(self):
-        good = LocationTrack.from_samples([sample(0, accuracy_m=3.0), sample(1, lon_off=1e-5, accuracy_m=3.0)])
-        poor = LocationTrack.from_samples([sample(0, accuracy_m=20.0), sample(1, lon_off=1e-5, accuracy_m=20.0)])
+        good = LocationTrack.from_samples(
+            [sample(0, accuracy_m=3.0), sample(1, lon_off=1e-5, accuracy_m=3.0)]
+        )
+        poor = LocationTrack.from_samples(
+            [sample(0, accuracy_m=20.0), sample(1, lon_off=1e-5, accuracy_m=20.0)]
+        )
         assert poor.locate(T0 + 500).uncertainty_m > good.locate(T0 + 500).uncertainty_m
 
     def test_peaks_between_fixes(self):

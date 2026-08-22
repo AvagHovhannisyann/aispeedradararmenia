@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import datetime, timezone
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from roadeye.domain.models import Defect
 
@@ -50,7 +51,7 @@ CSV_COLUMNS = [
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _row(defect: Defect) -> dict[str, Any]:
@@ -134,7 +135,7 @@ def to_geojson(
         "type": "FeatureCollection",
         "features": features,
         "roadeye": {
-            "generated_at": _iso(datetime.now(timezone.utc)),
+            "generated_at": _iso(datetime.now(UTC)),
             "defect_count": len(features),
             "notice": (
                 "Positions are estimates with stated uncertainty. Defects with "

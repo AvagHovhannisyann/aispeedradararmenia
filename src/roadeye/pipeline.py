@@ -18,7 +18,7 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from roadeye.clustering.geo import ClusterCandidate, ClusteringConfig, build_defects
@@ -153,7 +153,7 @@ def process_bundle(
     # produces can be placed on a map. Stop rather than emit unplaceable defects.
     if len(bundle.track) == 0:
         run.errors.append("no usable GPS fixes; refusing to emit unplaceable defects")
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = datetime.now(UTC)
         run.duration_s = round(time.monotonic() - started, 4)
         return PipelineResult(run=run, survey=survey)
 
@@ -253,11 +253,11 @@ def process_bundle(
         if not members:
             continue
         best = max(members, key=lambda d: d.confidence)
-        frame = frame_by_id.get(best.frame_id)
-        if frame is None or frame.observation_location is None:
-            run.warnings.append(
-                f"track {track.track_id} has no usable position and was dropped"
-            )
+        # Deliberately not named `frame`: that name belongs to the sampling loop above,
+        # and reusing it here would shadow a `Frame` with a `Frame | None`.
+        best_frame = frame_by_id.get(best.frame_id)
+        if best_frame is None or best_frame.observation_location is None:
+            run.warnings.append(f"track {track.track_id} has no usable position and was dropped")
             continue
 
         observation = DefectObservation(
@@ -267,9 +267,9 @@ def process_bundle(
             survey_id=bundle.survey_id,
             track_id=track.track_id,
             detection_ids=list(track.detection_ids),
-            observed_at=datetime.fromtimestamp(track.first_t_epoch_ms / 1000.0, tz=timezone.utc),
+            observed_at=datetime.fromtimestamp(track.first_t_epoch_ms / 1000.0, tz=UTC),
             confidence=track.max_confidence,
-            location=frame.observation_location,
+            location=best_frame.observation_location,
             representative_frame_id=best.frame_id,
         )
         candidates.append(
@@ -284,7 +284,7 @@ def process_bundle(
         defect_id_prefix=f"{bundle.survey_id}_def",
     )
     run.defects = len(defects)
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = datetime.now(UTC)
     run.duration_s = round(time.monotonic() - started, 4)
 
     return PipelineResult(

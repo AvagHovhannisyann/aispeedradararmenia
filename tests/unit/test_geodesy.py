@@ -60,9 +60,7 @@ class TestHaversine:
         the parallel arc converge — so the cos(lat) relationship holds tightly."""
         at_equator = haversine_m(LatLon(0.0, 0.0), LatLon(0.0, 0.001))
         at_yerevan = haversine_m(LatLon(40.0, 0.0), LatLon(40.0, 0.001))
-        assert at_yerevan == pytest.approx(
-            at_equator * math.cos(math.radians(40.0)), rel=1e-9
-        )
+        assert at_yerevan == pytest.approx(at_equator * math.cos(math.radians(40.0)), rel=1e-9)
 
     def test_symmetric(self):
         a, b = LatLon(40.1, 44.5), LatLon(40.2, 44.6)
@@ -98,7 +96,13 @@ class TestBearing:
 
     @pytest.mark.parametrize(
         "a,b,expected",
-        [(0.0, 0.0, 0.0), (0.0, 90.0, 90.0), (350.0, 10.0, 20.0), (10.0, 350.0, 20.0), (0.0, 180.0, 180.0)],
+        [
+            (0.0, 0.0, 0.0),
+            (0.0, 90.0, 90.0),
+            (350.0, 10.0, 20.0),
+            (10.0, 350.0, 20.0),
+            (0.0, 180.0, 180.0),
+        ],
     )
     def test_difference_takes_short_way(self, a, b, expected):
         assert bearing_difference_deg(a, b) == pytest.approx(expected)

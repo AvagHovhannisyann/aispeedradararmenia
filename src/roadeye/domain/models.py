@@ -16,7 +16,7 @@ believe this exists?", which means every object carries enough identity to walk 
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -38,7 +38,7 @@ DOMAIN_SCHEMA_VERSION = 1
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class _Base(BaseModel):
@@ -101,9 +101,11 @@ class BoundingBox(_Base):
     y2: float = Field(ge=0.0)
 
     @model_validator(mode="after")
-    def _ordered(self) -> "BoundingBox":
+    def _ordered(self) -> BoundingBox:
         if self.x2 <= self.x1 or self.y2 <= self.y1:
-            raise ValueError(f"degenerate bounding box: ({self.x1},{self.y1})-({self.x2},{self.y2})")
+            raise ValueError(
+                f"degenerate bounding box: ({self.x1},{self.y1})-({self.x2},{self.y2})"
+            )
         return self
 
     @property
@@ -132,7 +134,7 @@ class BoundingBox(_Base):
         """
         return ((self.x1 + self.x2) / 2.0, self.y2)
 
-    def iou(self, other: "BoundingBox") -> float:
+    def iou(self, other: BoundingBox) -> float:
         """Intersection over union. Used for temporal association."""
         ix1, iy1 = max(self.x1, other.x1), max(self.y1, other.y1)
         ix2, iy2 = min(self.x2, other.x2), min(self.y2, other.y2)
@@ -163,7 +165,7 @@ class Survey(_Base):
     ingest_stats: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _chronological(self) -> "Survey":
+    def _chronological(self) -> Survey:
         if self.ended_at is not None and self.ended_at < self.started_at:
             raise ValueError("survey ended_at precedes started_at")
         return self
@@ -285,10 +287,13 @@ class Defect(_Base):
     updated_at: datetime = Field(default_factory=_utcnow)
 
     @model_validator(mode="after")
-    def _severity_is_attributed(self) -> "Defect":
+    def _severity_is_attributed(self) -> Defect:
         # An assessed severity with no stated source is exactly the false authority we
         # are trying to avoid shipping to a government.
-        if self.severity is not Severity.UNASSESSED and self.severity_source is SeveritySource.OTHER:
+        if (
+            self.severity is not Severity.UNASSESSED
+            and self.severity_source is SeveritySource.OTHER
+        ):
             raise ValueError(
                 "a severity other than UNASSESSED must declare a severity_source "
                 "(ai / human / geometric_estimate)"

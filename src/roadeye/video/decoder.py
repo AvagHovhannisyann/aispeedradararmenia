@@ -15,9 +15,10 @@ Install the real decoder with ``pip install 'roadeye[video]'``.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Protocol, Sequence, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from roadeye.vision.base import FrameImage
 

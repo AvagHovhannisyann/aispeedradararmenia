@@ -184,7 +184,10 @@ def build_sampling_plan(
             t += step_s
             continue
 
-        if last_position is None:
+        # last_position and last_emit_t are always set together, so testing both keeps
+        # the invariant visible to a reader (and to the type checker) rather than
+        # relying on it being remembered.
+        if last_position is None or last_emit_t is None:
             emit, travelled = True, None
         else:
             travelled = haversine_m(last_position, loc.position)

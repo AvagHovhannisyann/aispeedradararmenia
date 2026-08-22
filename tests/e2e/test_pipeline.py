@@ -27,7 +27,7 @@ from roadeye.video.sampling import SamplingConfig
 from roadeye.vision.base import RawDetection
 from roadeye.vision.fake import FakeDetector, NullDetector, ScriptedDetector
 
-START = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.timezone.utc)
+START = dt.datetime(2026, 8, 18, 10, 42, 11, tzinfo=dt.UTC)
 T0 = int(START.timestamp() * 1000)
 LAT, LON = 40.18231, 44.51491
 LON_PER_10M = 0.000118
@@ -79,9 +79,7 @@ class TestHappyPath:
     def test_frame_times_are_anchored_to_the_recording_start(self, bundle):
         result = process_bundle(bundle, FakeDetector())
         for frame in result.frames:
-            assert frame.t_epoch_ms == pytest.approx(
-                T0 + frame.video_time_s * 1000, abs=1
-            )
+            assert frame.t_epoch_ms == pytest.approx(T0 + frame.video_time_s * 1000, abs=1)
 
     def test_run_records_full_provenance(self, bundle):
         """A defect must be able to answer 'why do you believe this exists?'."""
@@ -120,9 +118,7 @@ class TestDeduplication:
             bundle,
             ScriptedDetector(script),
             frame_source=source,
-            config=PipelineConfig(
-                sampling=SamplingConfig(target_spacing_m=2.5, fallback_fps=4.0)
-            ),
+            config=PipelineConfig(sampling=SamplingConfig(target_spacing_m=2.5, fallback_fps=4.0)),
         )
         assert result.run.detections >= 10
         assert len(result.defects) == 1, (
