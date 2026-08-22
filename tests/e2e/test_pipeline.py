@@ -256,6 +256,75 @@ class TestStorageAndExport:
             db.close()
 
 
+class TestRedactionIsRecordedOnTheRun:
+    """Whether evidence was redacted is a question asked *later*, usually by someone
+    deciding if a file may be sent somewhere. Silence reads as yes, so the run says."""
+
+    def test_an_unredacted_run_warns_on_its_own_record(self, tmp_path: Path, bundle):
+        config = PipelineConfig(evidence_dir=tmp_path / "ev", anonymizer=None)
+        result = process_bundle(bundle, FakeDetector(), config=config)
+        assert any("WITHOUT redaction" in w for w in result.run.warnings)
+
+    def test_a_redacted_run_does_not_warn_and_writes_a_manifest(self, tmp_path: Path, bundle):
+        """Needs a frame source with real pixels: SyntheticFrameSource yields
+        ``pixels=None``, so no evidence image is written and there is nothing to redact.
+        """
+        pytest.importorskip("numpy")
+        pytest.importorskip("PIL")
+        import json
+
+        import numpy as np
+        from PIL import Image
+
+        from roadeye.privacy.anonymizer import Anonymizer
+        from roadeye.privacy.base import Region, RegionKind
+        from roadeye.privacy.detectors import ScriptedRegionDetector
+        from roadeye.video.decoder import ImageSequenceFrameSource
+
+        frames_dir = tmp_path / "frames"
+        frames_dir.mkdir()
+        rng = np.random.default_rng(11)
+        for i in range(8):
+            pixels = rng.integers(0, 256, (120, 160, 3), dtype="uint8")
+            Image.fromarray(pixels).save(frames_dir / f"f{i:03d}.jpg")
+
+        evidence = tmp_path / "ev"
+        anonymizer = Anonymizer(
+            ScriptedRegionDetector(
+                [Region(x1=1, y1=1, x2=30, y2=30, kind=RegionKind.PERSON, confidence=0.9)],
+                detector_id="scripted-v9",
+            )
+        )
+        result = process_bundle(
+            bundle,
+            FakeDetector(),
+            frame_source=ImageSequenceFrameSource(frames_dir, duration_s=30.0),
+            config=PipelineConfig(evidence_dir=evidence, anonymizer=anonymizer),
+        )
+
+        assert result.defects, "no defects means this test proves nothing"
+        assert not any("WITHOUT redaction" in w for w in result.run.warnings)
+        manifest = json.loads((evidence / "REDACTION.json").read_text(encoding="utf-8"))
+        assert manifest["detector_id"] == "scripted-v9"
+        # Totals across the run, not whichever image happened to be processed last.
+        assert manifest["images_redacted"] >= 1
+        assert manifest["regions_redacted"] == manifest["images_redacted"]
+        assert manifest["by_kind"] == {"person": manifest["regions_redacted"]}
+
+    def test_the_run_config_names_the_redactor(self, tmp_path: Path, bundle):
+        """A run must be reproducible from its own record, and 'which redactor ran' is
+        exactly what gets asked when one is later found to miss something."""
+        pytest.importorskip("numpy")
+        from roadeye.privacy.anonymizer import Anonymizer
+        from roadeye.privacy.detectors import NullRegionDetector
+
+        config = PipelineConfig(
+            evidence_dir=tmp_path / "ev", anonymizer=Anonymizer(NullRegionDetector())
+        )
+        result = process_bundle(bundle, FakeDetector(), config=config)
+        assert result.run.config["anonymizer"] == "null"
+
+
 class TestDeterminism:
     def test_same_input_gives_same_defects(self, bundle):
         """Provenance is worthless if a rerun produces different answers."""

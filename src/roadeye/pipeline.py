@@ -14,12 +14,14 @@ exists?", which is the whole auditability claim.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from roadeye.clustering.geo import ClusterCandidate, ClusteringConfig, build_defects
 from roadeye.domain.enums import FrameQuality
@@ -71,6 +73,10 @@ class PipelineConfig:
     #: Without these a reviewer sees a frame id and nothing else, which makes review —
     #: the product's bottleneck — impossible.
     evidence_dir: Path | None = None
+    #: Redacts people and vehicles out of evidence images. ``None`` writes them as they
+    #: came off the camera, which is legitimate for local processing and for nothing
+    #: else — the run then carries a warning saying so (``docs/PRIVACY.md``).
+    anonymizer: object | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -82,6 +88,13 @@ class PipelineConfig:
             "max_gps_accuracy_m": self.max_gps_accuracy_m,
             "analyse_degraded_frames": self.analyse_degraded_frames,
             "evidence_dir": str(self.evidence_dir) if self.evidence_dir else None,
+            # The detector id, not the object: a run record must be reproducible from
+            # its own JSON, and "which redactor ran" is the question asked afterwards.
+            "anonymizer": (
+                getattr(self.anonymizer, "detector_id", str(self.anonymizer))
+                if self.anonymizer is not None
+                else None
+            ),
         }
 
 
@@ -296,12 +309,27 @@ def process_bundle(
     run.defects = len(defects)
 
     if cfg.evidence_dir is not None and defects:
-        saved = _extract_evidence(defects, frames, detections, frame_source, cfg.evidence_dir)
+        saved, reports = _extract_evidence(
+            defects, frames, detections, frame_source, cfg.evidence_dir, cfg.anonymizer
+        )
         if saved < len(defects):
             run.warnings.append(
                 f"evidence images written for {saved} of {len(defects)} defects; "
                 "the rest cannot be reviewed visually"
             )
+        # Keyed on whether a redactor was configured, not on whether any report came
+        # back. A run that redacted diligently and simply wrote no evidence (every frame
+        # unusable) must not be labelled as having skipped redaction.
+        if cfg.anonymizer is None:
+            # Not an error — local-only processing legitimately skips it — but it must
+            # be on the run record, because the question asked later is always "were
+            # these images redacted?" and silence reads as yes.
+            run.warnings.append(
+                "evidence images were written WITHOUT redaction; they may contain faces "
+                "and licence plates and must not leave this machine (docs/PRIVACY.md)"
+            )
+        elif reports:
+            _write_redaction_manifest(cfg.evidence_dir, reports, run.run_id, saved)
 
     run.finished_at = datetime.now(UTC)
     run.duration_s = round(time.monotonic() - started, 4)
@@ -316,14 +344,36 @@ def process_bundle(
     )
 
 
+def _write_redaction_manifest(
+    evidence_dir: Path, reports: list[Any], run_id: str, image_count: int
+) -> None:
+    """Record what redacted this directory, beside the images it redacted.
+
+    One manifest per run rather than a sidecar per image: the question it has to answer
+    is "which detector wrote these, so which need reprocessing when it turns out to miss
+    something?", and that is a property of the run.
+    """
+    from roadeye.privacy.anonymizer import summarise_reports
+
+    payload = summarise_reports(reports)
+    payload["processing_run_id"] = run_id
+    payload["images_written"] = image_count
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    (evidence_dir / "REDACTION.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def _extract_evidence(
     defects: list[Defect],
     frames: list[Frame],
     detections: list[Detection],
     frame_source: FrameSource,
     evidence_dir: Path,
-) -> int:
-    """Write one context + crop image per defect. Returns how many succeeded.
+    anonymizer: object | None = None,
+) -> tuple[int, list[Any]]:
+    """Write one frame + context + crop image per defect.
+
+    Returns how many succeeded, and one redaction report per redacted image so the
+    caller can record totals rather than whichever report happened to be last.
 
     Deliberately a **second pass** rather than caching pixels during the main loop.
     Which frame is "representative" is only known after clustering, so caching would
@@ -344,9 +394,10 @@ def _extract_evidence(
         if frame is not None:
             wanted.setdefault(frame.video_time_s, []).append(defect)
     if not wanted:
-        return 0
+        return 0, []
 
     saved = 0
+    reports: list[Any] = []
     for video_time_s, image in frame_source.frames_at(sorted(wanted)):
         for defect in wanted.get(video_time_s, []):
             detection = detection_by_frame.get(defect.representative_frame_id or "")
@@ -355,11 +406,14 @@ def _extract_evidence(
                 image.pixels,
                 detection.bbox if detection else None,
                 evidence_dir,
+                anonymizer=anonymizer,  # type: ignore[arg-type]
             )
             if paths is not None:
                 defect.representative_image_path = paths.context
+                if paths.redaction is not None:
+                    reports.append(paths.redaction)
                 saved += 1
-    return saved
+    return saved, reports
 
 
 def open_frame_source(bundle: SurveyBundle) -> FrameSource | None:

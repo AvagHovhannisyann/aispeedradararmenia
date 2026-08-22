@@ -1,7 +1,7 @@
 # RoadEye — Architecture
 
-**Status:** M0/M1. The Python core is implemented and tested; the collector is
-scaffolded but unrun on a device; the dashboard and API are not built.
+**Status:** M0-M5. The Python core is implemented and tested, including the review API;
+the collector is scaffolded but unrun on a device; the dashboard is not built.
 
 ## The central bet
 
@@ -39,6 +39,7 @@ Recorded as `ADR-001`.
 │  geolocation      video time ──► absolute time ──► interpolated position │
 │  clustering       tracks ──► defects      (dedup layer 2)                │
 │  map_matching     defect ──► road segment (OSM, ODbL)                    │
+│  privacy          people + vehicles ──► destroyed  ◄── swappable         │
 │  storage/db       SQLite + R*Tree                                        │
 │  reporting        CSV / GeoJSON with provenance                          │
 └───────────────────────────────────┬──────────────────────────────────────┘
@@ -61,16 +62,17 @@ pipeline.py · cli.py · services/api  ← orchestration
 
 **The domain layer imports no ML framework.** A `torch.Tensor` in a domain model is a
 bug. This is what makes the whole pipeline testable on a CPU-only machine with no
-weights, no ffmpeg and no network — 330 of the 392 tests need no optional dependency at
-all and run in ~2.5 s.
+weights, no ffmpeg and no network — 314 of the 429 tests need no optional dependency at
+all and run in ~1.8 s.
 
-## The four seams
+## The five seams
 
 Each isolates something we expect to be wrong about.
 
 | Seam | Protocol | Isolates |
 |---|---|---|
 | Detector | `RoadDamageDetector` | Which model/framework wins (ADR-004) |
+| Redactor | `RegionDetector` | Which model finds people/vehicles, and its checkpoint licence (L-6) |
 | Frame source | `FrameSource` | ffmpeg availability; synthetic vs real video |
 | Storage | `Database` | SQLite → PostGIS migration (ADR-003) |
 | Bundle format | `schema_version` | Expo collector → native collector (ADR-002) |
@@ -150,16 +152,16 @@ auditability to a government cannot quietly overwrite it.
 | A generic DB abstraction layer | Speculative abstraction costs more than the eventual port |
 | Real-time on-device inference | ADR-001 |
 | Any runtime LLM/AI API call | ADR-005 — RoadEye must run offline with no per-call cost |
-| Face/plate recognition | Prohibited by `PRIVACY.md` |
+| Face/plate *recognition* | Prohibited by `PRIVACY.md`. Detection-for-blurring exists; nothing extracts, encodes or compares an identity |
 
 ## Repository layout
 
 ```
 apps/collector/      Expo survey collector (TypeScript)
 apps/dashboard/      React + MapLibre municipal UI            [M6]
-services/api/        FastAPI local API                        [M5]
+services/api/        FastAPI local API + review UI
 src/roadeye/         the processing core (implemented)
 ml/                  datasets, training, evaluation, experiments
-tests/               unit · integration · e2e (201 passing)
+tests/               unit · integration · e2e (429 passing)
 docs/                research, decisions, protocol, privacy, metrics
 ```

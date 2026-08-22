@@ -9,6 +9,8 @@ Commands
 ``process``   run the pipeline over a bundle and store the result
 ``detect``    run a detector over images and draw the boxes
 ``review``    launch the human-in-the-loop review UI
+``redact``    blur people and vehicles out of images
+``retention`` delete artefacts past their retention period, logging each one
 ``roads``     fetch or import an OpenStreetMap road network
 ``match-roads``     assign stored defects to road segments
 ``export``    write defects to CSV / GeoJSON
@@ -30,6 +32,8 @@ from roadeye.ingest.bundle import BundleError, load_bundle
 from roadeye.map_matching.matcher import MatchingConfig
 from roadeye.map_matching.osm import DEFAULT_OVERPASS_ENDPOINT
 from roadeye.pipeline import PipelineConfig, process_survey
+from roadeye.privacy.redaction import RedactionMethod
+from roadeye.privacy.retention import RetentionPolicy
 from roadeye.reporting.export import summarize, to_csv, to_geojson
 from roadeye.storage.db import Database
 from roadeye.vision.fake import FakeDetector
@@ -223,6 +227,23 @@ def _cmd_process(args: argparse.Namespace) -> int:
     if args.min_confidence is not None:
         config.min_detection_confidence = args.min_confidence
 
+    if config.evidence_dir is not None:
+        from roadeye.privacy.base import RedactionError
+
+        try:
+            config.anonymizer = _build_anonymizer(args)
+        except RedactionError as exc:
+            # Fail the run rather than quietly writing identifiable faces because the
+            # redactor would not load. Opting out has to be explicit.
+            print(f"{exc}\n\nTo proceed without redaction, pass --no-redact.", file=sys.stderr)
+            return 1
+        if config.anonymizer is None:
+            print(
+                "NOTE: --no-redact. Evidence images will contain faces and licence "
+                "plates. They must not leave this machine — see docs/PRIVACY.md.",
+                file=sys.stderr,
+            )
+
     detector = _load_detector(
         args.model,
         args.fake_detections,
@@ -310,6 +331,107 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(f"wrote {args.geojson} ({len(defects)} features)")
     if not args.csv and not args.geojson:
         print(json.dumps(summarize(defects), indent=2))
+    return 0
+
+
+def _build_anonymizer(args: argparse.Namespace) -> object | None:
+    """Build the redactor a command was asked for, or refuse clearly.
+
+    ``--no-redact`` is spelled out rather than being the absence of a flag, so that
+    writing unredacted images is always something someone chose.
+    """
+    from roadeye.privacy.anonymizer import Anonymizer
+    from roadeye.privacy.detectors import TorchvisionPersonVehicleDetector
+    from roadeye.privacy.redaction import RedactionConfig, RedactionMethod
+
+    if getattr(args, "no_redact", False):
+        return None
+
+    detector = TorchvisionPersonVehicleDetector(score_threshold=args.redact_confidence)
+    return Anonymizer(
+        detector,
+        config=RedactionConfig(
+            method=RedactionMethod(args.redact_method),
+            blocks_across=args.redact_blocks,
+        ),
+    )
+
+
+def _cmd_redact(args: argparse.Namespace) -> int:
+    """Redact people and vehicles out of a directory of images, in place or to a copy."""
+    import numpy as np
+    from PIL import Image
+
+    from roadeye.privacy.base import RedactionError
+    from roadeye.vision.annotate import iter_images
+
+    images = iter_images(args.images)
+    if not images:
+        print(f"no images found at {args.images}", file=sys.stderr)
+        return 1
+
+    try:
+        anonymizer = _build_anonymizer(args)
+    except RedactionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if anonymizer is None:
+        print("--no-redact does nothing here; this command exists to redact", file=sys.stderr)
+        return 2
+
+    out_dir = Path(args.output) if args.output else None
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    totals = {"images": 0, "regions": 0, "person": 0, "vehicle": 0}
+    for path in images:
+        pixels = np.asarray(Image.open(path).convert("RGB"), dtype="uint8")
+        redacted, report = anonymizer.redact(pixels)  # type: ignore[attr-defined]
+        destination = (out_dir / path.name) if out_dir is not None else path
+        Image.fromarray(redacted).save(destination, quality=90)
+
+        totals["images"] += 1
+        totals["regions"] += report.region_count
+        for kind, count in report.to_json()["by_kind"].items():
+            totals[kind] = totals.get(kind, 0) + count
+        if args.verbose:
+            print(f"{path.name:<32} {report.region_count:3d} regions")
+
+    print(f"\ndetector   {anonymizer.detector_id}")  # type: ignore[attr-defined]
+    print(f"images     {totals['images']}")
+    print(
+        f"regions    {totals['regions']} ({totals.get('person', 0)} person, "
+        f"{totals.get('vehicle', 0)} vehicle)"
+    )
+    if out_dir is None:
+        print("\nOriginals were OVERWRITTEN. Redaction is not reversible, by design.")
+    else:
+        print(f"\nwrote {out_dir}/ — the originals are untouched and still identifiable")
+    print(
+        "\nRedaction is best-effort. A detector that missed somebody has produced an "
+        "image with somebody in it; this is not a guarantee of anonymity."
+    )
+    return 0
+
+
+def _cmd_retention(args: argparse.Namespace) -> int:
+    """Delete artefacts past their retention period, and log every deletion."""
+    from roadeye.privacy.retention import RetentionPolicy, apply_retention
+
+    policy = RetentionPolicy(
+        raw_video_days=args.raw_video_days,
+        frames_days=args.frames_days,
+    )
+    sweep = apply_retention(args.root, policy, delete=args.delete)
+    print(sweep.summary())
+    for candidate in sweep.candidates:
+        mark = "x" if candidate.deleted else "-"
+        print(f"  {mark} {candidate.kind:<10} {candidate.age_days:6.1f}d  {candidate.path}")
+    if sweep.dry_run and sweep.candidates:
+        print("\nNothing was deleted. Re-run with --delete to actually remove these.")
+    if args.json:
+        Path(args.json).write_text(json.dumps(sweep.to_json(), indent=2), encoding="utf-8")
+        print(f"wrote {args.json}")
     return 0
 
 
@@ -414,6 +536,29 @@ def _cmd_env(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_redaction_args(parser: argparse.ArgumentParser) -> None:
+    """Redaction options, shared by every command that can write an evidence image."""
+    parser.add_argument(
+        "--redact-confidence",
+        type=float,
+        default=0.35,
+        help="detector threshold. LOWER is safer here — a missed person is the costly "
+        "error, an over-blurred bollard is not (default: %%(default)s)".replace("%%", "%"),
+    )
+    parser.add_argument(
+        "--redact-method",
+        choices=[m.value for m in RedactionMethod],
+        default=RedactionMethod.MOSAIC.value,
+        help="mosaic keeps the scene readable; solid destroys the region completely",
+    )
+    parser.add_argument(
+        "--redact-blocks",
+        type=int,
+        default=4,
+        help="blocks across the shorter side of a region (default: %(default)s)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="roadeye", description="RoadEye — smartphone road inspection pipeline."
@@ -457,6 +602,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="synthetic detections per frame (fake detector only)",
     )
+    p.add_argument(
+        "--no-redact",
+        action="store_true",
+        help="write evidence images WITHOUT blurring people and vehicles. Legitimate "
+        "for local-only processing; the images must then never leave this machine",
+    )
+    _add_redaction_args(p)
     p.set_defaults(func=_cmd_process)
 
     p = sub.add_parser("review", help="launch the human review UI")
@@ -493,6 +645,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="omit rejected defects — they are hard negatives and usually worth keeping",
     )
     p.set_defaults(func=_cmd_export_dataset)
+
+    p = sub.add_parser(
+        "redact",
+        help="blur people and vehicles out of images before they leave this machine",
+    )
+    p.add_argument("images", help="image file or directory")
+    p.add_argument(
+        "--output",
+        help="write redacted copies here (default: OVERWRITE the originals in place)",
+    )
+    _add_redaction_args(p)
+    p.add_argument("--verbose", "-v", action="store_true")
+    p.set_defaults(func=_cmd_redact, no_redact=False)
+
+    p = sub.add_parser(
+        "retention",
+        help="delete artefacts past their retention period, logging each deletion",
+    )
+    p.add_argument("root", help="directory to sweep")
+    p.add_argument(
+        "--delete",
+        action="store_true",
+        help="actually delete. Without this the sweep only reports what is due",
+    )
+    p.add_argument("--raw-video-days", type=int, default=RetentionPolicy.raw_video_days)
+    p.add_argument("--frames-days", type=int, default=RetentionPolicy.frames_days)
+    p.add_argument("--json", help="write the full sweep record here")
+    p.set_defaults(func=_cmd_retention)
 
     p = sub.add_parser(
         "roads",
