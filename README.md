@@ -63,10 +63,23 @@ python3 -m venv .venv
 ./scripts/demo.sh
 ```
 
-### Then look at the result
+### Then see it on a map
 
-Open `demo_output/demo.geojson` at [geojson.io](https://geojson.io) — drag the file
-onto the map. The markers trace an 800 m × 400 m rectangle in central Yerevan.
+```bash
+python3 scripts/view_map.py
+```
+
+Click **Open in Browser** when the popup appears (or open the **PORTS** tab and click
+the globe on port 8000). The markers trace an 800 m × 400 m rectangle in central
+Yerevan; click one for its full record — confidence, uncertainty, model version,
+processing run.
+
+Nothing is uploaded anywhere: the page is generated locally and served from your own
+machine. That matters less for synthetic data than it will for real Armenian surveys,
+which must never leave local storage (`docs/PRIVACY.md`).
+
+> `demo_output/` is git-ignored, so VS Code greys it out or hides it in the file
+> explorer. The files are there.
 
 **What this proves:** timestamps align, positions interpolate, a stop at a red light
 produces no duplicate frames, repeated views collapse into single defects, storage
