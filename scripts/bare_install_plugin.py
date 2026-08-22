@@ -28,22 +28,27 @@ from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
 from types import ModuleType
 
-#: Every distribution declared in an optional extra in pyproject.toml, by import name.
-#: Keep this in step with those extras — a dependency missing here is one this check
-#: silently stops covering.
-OPTIONAL_MODULES = frozenset(
-    {
-        "numpy",  # video, quality, vision
-        "av",  # video
-        "torch",  # vision
-        "torchvision",  # vision
-        "PIL",  # review, vision
-        "fastapi",  # api
-        "starlette",  # api (via fastapi)
-        "uvicorn",  # api
-        "httpx",  # dev, drives the FastAPI TestClient
-    }
-)
+#: Distribution name in pyproject.toml -> the name you `import`. Mostly identical; the
+#: interesting rows are the ones that are not, which is why this is a map rather than a
+#: set. `tests/unit/test_bare_install_plugin.py` fails if an extra names a distribution
+#: that is missing here — the alternative is a checker that quietly stops covering a
+#: dependency somebody added six months ago, which is the exact failure it was built to
+#: prevent, one level up.
+DISTRIBUTION_IMPORTS: dict[str, str] = {
+    "av": "av",  # video
+    "numpy": "numpy",  # video, quality, vision
+    "torch": "torch",  # vision
+    "torchvision": "torchvision",  # vision
+    "pillow": "PIL",  # review, vision
+    "fastapi": "fastapi",  # api, review
+    "uvicorn": "uvicorn",  # api, review
+    "httpx": "httpx",  # dev — drives the FastAPI TestClient in-process
+}
+
+#: What the blocker hides. `starlette` is here and not above because no extra names it:
+#: it arrives under FastAPI, and leaving it importable would let a test that only touches
+#: `starlette.testclient` pass on a machine that has neither.
+OPTIONAL_MODULES = frozenset(set(DISTRIBUTION_IMPORTS.values()) | {"starlette"})
 
 
 class OptionalDependencyBlocker(MetaPathFinder):

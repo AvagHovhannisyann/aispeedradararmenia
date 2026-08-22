@@ -15,7 +15,7 @@ Intended customer: municipalities and road agencies, starting in Yerevan.
 
 | Component | State |
 |---|---|
-| Processing core (`src/roadeye/`) | **Implemented, 509 tests passing** |
+| Processing core (`src/roadeye/`) | **Implemented, 514 tests passing** |
 | Collector (`apps/collector/`) | Scaffolded, **never run on a device**. Pure logic tested (`npm test`, 31 tests) |
 | Detector | Real adapter + training pipeline built (M3). Bootstrap model trained on **Czech** RDD2022 data only |
 | Armenian data | **None** |
@@ -37,7 +37,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/roadeye validate <bundle> # inspect a survey without processing it
 ```
 
-389 of the 509 tests require **no optional dependency** and run in ~4 s; the rest are
+394 of the 514 tests require **no optional dependency** and run in ~4 s; the rest are
 `importorskip`-guarded and skip on a bare install. Keep it that way: a suite that needs a
 GPU is a suite that stops being run.
 
