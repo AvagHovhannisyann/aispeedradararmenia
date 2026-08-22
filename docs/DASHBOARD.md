@@ -84,13 +84,23 @@ So the basemap is **off by default**. Street context comes instead from the road
 `roadeye roads` already downloaded for map matching — the same ODbL data, held locally,
 drawn as lines. No tile server is contacted, and none needs to be.
 
-**That fixes the tiles and not the library.** MapLibre itself is still fetched from unpkg
-at view time ([ADR-010](DECISIONS/ADR-010-dashboard-without-a-build-step.md)), so with no
-internet the page loads and the map does not. An earlier version of this file claimed the
-dashboard "works on a laptop with no internet at all"; it does not, and the ADR said so
-plainly while this page contradicted it. Vendoring MapLibre is permitted by its BSD-3
-licence and remains the open item — it is ~800 KB and one commit, and it is the difference
-between offline-first as a posture and as a fact.
+**MapLibre itself is vendored**, under `services/api/static/vendor/`, with its BSD-3
+licence text beside it and its SHA-256 recorded. So the dashboard genuinely works on a
+laptop with no internet at all, which is what offline-first is supposed to mean.
+
+It was loaded from unpkg until an amendment to
+[ADR-010](DECISIONS/ADR-010-dashboard-without-a-build-step.md) reversed that. Three
+reasons: a municipal network will likely block an unfamiliar CDN, so the failure mode was
+a working dashboard here and a grey rectangle in the meeting; offline-first was otherwise
+a slogan with a hole in the middle; and it meant executing third-party JavaScript fetched
+at view time from a host we do not control, on a page showing survey imagery that may
+contain identifiable people.
+
+The claim is checked rather than trusted. `tests/unit/test_dashboard_assets.py` fails if
+any page loads a script, stylesheet or image from a remote host — a one-line CDN tag works
+perfectly on the machine of whoever adds it, so nothing else would catch it. The page was
+then loaded in a real browser with **every** request outside `127.0.0.1` aborted: the map
+rendered, and zero requests were blocked because none were made.
 
 `?tiles=1` turns the OSM raster basemap on for local use, and the attribution bar then
 says plainly what it is.

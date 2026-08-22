@@ -17,8 +17,8 @@ licence. See `docs/LICENSE_AUDIT.md`.
 |---|---|---|---|
 | **pydantic** | ≥2.5,<3 | MIT | Only hard runtime dependency |
 
-That is the entire required dependency set. The processing core, its CLI and 394 of its
-514 tests run on Python's standard library plus pydantic — verified by
+That is the entire required dependency set. The processing core, its CLI and 400 of its
+520 tests run on Python's standard library plus pydantic — verified by
 `scripts/bare_install_plugin.py`, not assumed. Map matching added no dependency: OSM XML
 is parsed with `xml.etree`, Overpass with `json` and `urllib`, and the road-network file
 is `gzip` + `json`.
@@ -38,12 +38,31 @@ is `gzip` + `json`.
 | `dev` | mypy | MIT | Type checking |
 | `dev` | httpx | BSD-3-Clause | Drives FastAPI's TestClient in-process |
 | `review`, `vision` | Pillow | MIT-CMU (HPND) | Evidence images and annotation drawing |
-| — (browser) | MapLibre GL JS 4.7.1 | BSD-3-Clause | **In use** by the M6 dashboard. Loaded from unpkg at view time, not vendored — see ADR-010 |
+| — (browser) | MapLibre GL JS 4.7.1 | BSD-3-Clause | **In use** by the M6 dashboard, and **vendored** — see below |
 
 PyAV bundles/links FFmpeg, which is **LGPL-2.1+ or GPL-2+ depending on build options**.
 It is an optional extra invoked as a library for decoding only. Before distributing any
 bundled artefact that includes it, confirm the FFmpeg build configuration — a GPL build
 would impose obligations an LGPL build does not.
+
+## Vendored into this repository
+
+The only third-party code committed to this tree. It lives under
+`services/api/static/vendor/`, whose `README.md` records its origin URL, the date, the
+SHA-256 of each file, and the command to re-fetch it.
+
+| Component | Version | Licence | Obligation, and how it is met |
+|---|---|---|---|
+| **MapLibre GL JS** | 4.7.1 | BSD-3-Clause | Redistribution — source or binary — must carry the copyright notice, the conditions and the disclaimer. `maplibre-gl-LICENSE.txt` ships beside the library, and `tests/unit/test_dashboard_assets.py` fails if it goes missing |
+
+Vendored on 2026-08-22, reversing ADR-010's original decision to load it from a CDN.
+Because the dashboard must draw a map on a municipal laptop with no internet, because
+offline-first is otherwise a slogan, and because fetching third-party JavaScript at view
+time from a host we do not control — onto a page showing survey imagery — is a standing
+supply-chain exposure rather than a one-time reviewed artefact.
+
+**The file is never edited.** A patched copy would look identical to the original at a
+glance and would be silently undone by the next re-fetch.
 
 ## CI actions
 

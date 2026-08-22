@@ -131,10 +131,10 @@ def create_app(
         # "SQLite objects created in a thread can only be used in that same thread".
         return Database(db_path)
 
-    def _static(name: str, media_type: str) -> FileResponse:
-        path = STATIC_DIR / name
+    def _static(relative: str, media_type: str) -> FileResponse:
+        path = STATIC_DIR / relative
         if not path.is_file():  # pragma: no cover - packaging error
-            raise HTTPException(status_code=500, detail=f"{name} is missing")
+            raise HTTPException(status_code=500, detail=f"{relative} is missing")
         return FileResponse(path, media_type=media_type)
 
     @app.get("/", response_class=HTMLResponse)
@@ -150,20 +150,26 @@ def create_app(
 
     @app.get("/static/{name}")
     def static_asset(name: str) -> FileResponse:
-        """Serve the dashboard's CSS and JS.
+        """Serve the dashboard's CSS and JS, and the vendored map library.
 
         Whitelisted by name rather than mounted as a directory: this app also serves an
         evidence directory of survey imagery, and a static mount is one misconfiguration
-        away from serving the wrong tree.
+        away from serving the wrong tree. The paths below are constants in this file, so
+        the request never supplies part of a path — only a key that must match exactly.
         """
         allowed = {
-            "dashboard.css": "text/css",
-            "dashboard.js": "application/javascript",
+            "dashboard.css": ("dashboard.css", "text/css"),
+            "dashboard.js": ("dashboard.js", "application/javascript"),
+            # Third-party, kept under vendor/ so what is ours and what is not stays
+            # obvious at a glance. MapLibre is BSD-3-Clause; the licence text ships
+            # beside it, as that licence requires of a redistribution.
+            "maplibre-gl.css": ("vendor/maplibre-gl.css", "text/css"),
+            "maplibre-gl.js": ("vendor/maplibre-gl.js", "application/javascript"),
         }
-        media_type = allowed.get(name)
-        if media_type is None:
+        entry = allowed.get(name)
+        if entry is None:
             raise HTTPException(status_code=404, detail="no such asset")
-        return _static(name, media_type)
+        return _static(*entry)
 
     @app.get("/api/queue")
     def queue(
