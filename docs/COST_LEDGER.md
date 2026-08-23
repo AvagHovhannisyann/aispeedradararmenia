@@ -9,7 +9,7 @@ today?*
 
 | Item | Cost | Note |
 |---|---|---|
-| Development machine | **$0** | Already owned |
+| Development machine | **$0** | Already owned. Windows, **GTX 1660 Ti 6 GB** (confirmed 2026-08-23) |
 | Smartphone | **$0** | Already owned |
 | Python, PyTorch, torchvision | **$0** | BSD-3 |
 | Expo / React Native | **$0** | MIT |
@@ -47,6 +47,13 @@ plan and would cap Actions at 2,000 minutes/month, which is far more than this u
 
 **Privacy rule:** raw Armenian survey video must never be uploaded to them
 (`PRIVACY.md`).
+
+That rule used to have an awkward consequence: it forbade the only GPUs this project had
+access to from touching the data the shipping model must be trained on, leaving M7 with a
+laptop CPU. The founder's machine turns out to have a **GTX 1660 Ti (6 GB)**, which
+resolves it at zero cost — adequate for Faster R-CNN + MobileNetV3, and local, so the
+privacy rule and the compute plan stop contradicting each other. Kaggle keeps its role for
+public datasets like RDD2022, where 16 GB of P100 is genuinely faster and no rule applies.
 
 ## Deferred costs — not yet incurred, foreseeable
 
