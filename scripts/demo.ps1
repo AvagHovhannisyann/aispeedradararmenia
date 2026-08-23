@@ -31,14 +31,33 @@ if (Test-Path ".venv\Scripts\python.exe") {
 }
 
 $OUT = if ($args.Count -ge 1) { $args[0] } else { "demo_output" }
+$MARKER = ".roadeye-demo"
 
 function Rule($text) {
     Write-Host ""
     Write-Host "-- $text ---------------------------------------" -ForegroundColor White
 }
 
-if (Test-Path $OUT) { Remove-Item -Recurse -Force $OUT }
+# This script wipes its output directory so each run starts clean, and it takes that
+# directory as an argument. Those two facts together mean `demo.ps1 C:\Users\You\Documents`
+# would recursively delete Documents — so a directory is only ever deleted if a previous
+# run left its marker in it. Anything else is refused rather than assumed to be ours.
+if (Test-Path $OUT) {
+    if (-not (Test-Path (Join-Path $OUT $MARKER))) {
+        Write-Host "Refusing to touch '$OUT': it exists and this script did not create it." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "This script deletes its output directory before each run. It will only do"
+        Write-Host "that to a directory containing its own $MARKER file."
+        Write-Host ""
+        Write-Host "If this is a demo_output from before this check existed, deleting it is"
+        Write-Host "safe - everything in it is regenerated. Otherwise pick a different path."
+        exit 1
+    }
+    Remove-Item -Recurse -Force $OUT
+}
 New-Item -ItemType Directory -Path $OUT | Out-Null
+Set-Content -Path (Join-Path $OUT $MARKER) `
+    -Value "Created by scripts/demo.ps1. Its presence lets the next run delete this directory."
 
 Rule "1/6  Run the test suite"
 & $PY -m pytest -q
