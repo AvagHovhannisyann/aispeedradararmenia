@@ -166,15 +166,42 @@ training on Armenian data.
 .venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-Driver 531.79 satisfies CUDA 12.x (the floor is 525), and CUDA minor-version
-compatibility means current wheels run on it — no driver update and no pinned older
-PyTorch. **Verify rather than assume**: if `cuda.is_available()` prints `False`, pip
-installed a CPU-only build, and the fix is an explicit CUDA index rather than a
-reinstall of the same thing:
+**On Windows this prints `False` the first time, every time.** PyPI's default `torch`
+wheel for Windows is CPU-only — unlike Linux, where it bundles CUDA. Nothing is broken;
+the GPU build has to be asked for by name:
 
 ```powershell
-.venv\Scripts\pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu121
+.venv\Scripts\pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
+
+Two constraints decide which index, and getting either wrong wastes a 2 GB download:
+
+**Your Python version must have wheels there.** Measured 2026-08-23, Windows:
+
+| Index | CUDA | Python versions with wheels |
+|---|---|---|
+| `cu121` | 12.1 | 3.8 – 3.12 |
+| `cu124` | 12.4 | 3.8 – 3.13 |
+| `cu126` | 12.6 | 3.9 – **3.14** |
+| `cu128` | 12.8 | 3.9 – **3.14** |
+| `cu130` | 13.0 | 3.10 – 3.14 |
+
+The founder's machine runs **Python 3.14**, so `cu121` and `cu124` have nothing to
+install and pip fails with "no matching distribution" — which reads like a broken command
+rather than a version mismatch, so it is written down here.
+
+**Your driver must support that CUDA major version.** Driver 531.79 is a CUDA 12.1
+driver. CUDA *minor* version compatibility means it runs any 12.x build, so `cu126` and
+`cu128` are fine; **`cu130` is CUDA 13 and will not work** without a much newer driver.
+
+That leaves `cu126` as the conservative pick: newest CUDA 12.x that is well clear of the
+driver's floor. If it misbehaves, **update the NVIDIA driver** rather than hunting wheels
+— Turing is still supported, it is free, and a current driver removes this whole table as
+a consideration.
+
+Verify after installing. `torch.cuda.is_available()` must print `True` before any
+training run, because torch will otherwise fall back to CPU silently and the only symptom
+is an epoch that takes an hour.
 
 ### Batch size on 6 GB
 
