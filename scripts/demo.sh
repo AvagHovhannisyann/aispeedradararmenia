@@ -26,6 +26,12 @@ elif command -v roadeye >/dev/null 2>&1; then
 else
     echo "RoadEye is not installed yet. Run:"
     echo "    python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
+    echo
+    echo "On Windows, executables live in Scripts\\ rather than bin/, and this script"
+    echo "does not run at all — use scripts/demo.ps1:"
+    echo "    python -m venv .venv"
+    echo "    .venv\\Scripts\\pip install -e '.[dev]'"
+    echo "    .\\scripts\\demo.ps1"
     exit 1
 fi
 

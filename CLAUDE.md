@@ -37,6 +37,10 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/roadeye validate <bundle> # inspect a survey without processing it
 ```
 
+**The founder's laptop is Windows.** There, executables live in `.venv\Scripts\`, not
+`.venv/bin/`, and `demo.sh` does not run — use `scripts/demo.ps1`. When adding a command
+to a doc, give the Windows form too, or it is a command the founder cannot run.
+
 427 of the 547 tests require **no optional dependency** and run in ~4 s; the rest are
 `importorskip`-guarded and skip on a bare install. Keep it that way: a suite that needs a
 GPU is a suite that stops being run.
