@@ -194,14 +194,38 @@ rather than a version mismatch, so it is written down here.
 driver. CUDA *minor* version compatibility means it runs any 12.x build, so `cu126` and
 `cu128` are fine; **`cu130` is CUDA 13 and will not work** without a much newer driver.
 
-That leaves `cu126` as the conservative pick: newest CUDA 12.x that is well clear of the
-driver's floor. If it misbehaves, **update the NVIDIA driver** rather than hunting wheels
-— Turing is still supported, it is free, and a current driver removes this whole table as
-a consideration.
+### The configuration that actually works (verified 2026-08-23)
+
+Not inferred — run on the founder's machine, GTX 1660 Ti, driver 531.79, Python 3.14:
+
+```powershell
+.venv\Scripts\pip install --force-reinstall torch==2.13.0+cu126 torchvision --index-url https://download.pytorch.org/whl/cu126
+```
+
+```
+version: 2.13.0+cu126
+cuda build: 12.6
+available: True
+devices: 1
+```
+
+**Pin the version explicitly.** An unpinned `torch torchvision` against the same index
+left `2.13.0+cpu` in place; naming `torch==2.13.0+cu126` is what replaced it. The download
+is 2.6 GB and takes a few minutes.
+
+**And the driver did not need updating.** CUDA minor-version compatibility genuinely
+holds here: a 12.1 driver runs a 12.6 build. That was a hopeful claim before someone
+tried it, and it is a measured one now. Updating the driver remains the right move if
+anything misbehaves — Turing is still supported and it is free — but it is not a
+prerequisite.
 
 Verify after installing. `torch.cuda.is_available()` must print `True` before any
 training run, because torch will otherwise fall back to CPU silently and the only symptom
-is an epoch that takes an hour.
+is an epoch that takes an hour:
+
+```powershell
+.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
 
 ### Batch size on 6 GB
 
