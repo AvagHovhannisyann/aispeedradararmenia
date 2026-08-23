@@ -41,7 +41,8 @@ def build_model(num_classes: int, *, pretrained_backbone: bool = True) -> Any:
     """Construct a Faster R-CNN with a MobileNetV3 backbone.
 
     Chosen over a ResNet-50 backbone deliberately: it trains in a fraction of the time
-    on CPU, and the founder has no GPU. The architecture is a placeholder for the
+    on CPU, and fits comfortably in the 6 GB of the founder's GTX 1660 Ti — which a
+    ResNet-50 backbone at useful resolution would not. The architecture is a placeholder for the
     eventual shipping model (RTMDet remains the candidate) — the point of the Protocol
     is that swapping it costs one adapter.
 

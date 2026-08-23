@@ -132,12 +132,117 @@ container: Faster R-CNN + MobileNetV3, 630 images at 384 px, batch 4 — roughly
 **4 seconds per step, ~10 minutes per epoch**. Ten epochs is an afternoon, and the
 result is still undertrained.
 
-Use free GPU:
+### The founder's machine has a GPU (confirmed 2026-08-23)
+
+```
+NVIDIA GeForce GTX 1660 Ti — 6144 MiB, driver 531.79, CUDA 12.1, Windows/WDDM
+```
+
+This was not true when the rest of this document was written, and it changes the plan in
+one place that matters more than speed. **6 GB is the binding constraint**, not the clock:
+Turing without tensor cores, and WDDM reserves some VRAM for the desktop, so budget on
+roughly 5 GB usable.
 
 | Service | Quota | Use |
 |---|---|---|
-| **Kaggle** | ~30 GPU-h/week, commonly P100 16 GB | Primary |
+| **Local GTX 1660 Ti** | Unlimited, no eviction, no queue | **Anything involving our own data** |
+| **Kaggle** | ~30 GPU-h/week, commonly P100 16 GB | Public datasets only, when 16 GB helps |
 | **Colab** | No guaranteed GPU; unpublished, varying limits; ~12 h session cap | Backup |
+
+**The decision rule is data provenance, not speed.** RDD2022 is already public, so train
+it wherever is convenient — Kaggle's P100 has more headroom and is genuinely faster.
+Armenian survey footage may never be uploaded to either service (`docs/PRIVACY.md`,
+`docs/COST_LEDGER.md`), which until now left M7 — the model that actually ships — with no
+compute story better than a laptop CPU.
+
+**The 1660 Ti is therefore the enabling hardware for M7, not a convenience.** It is the
+only compute available to this project that is both adequate and privacy-compliant for
+training on Armenian data.
+
+### Setting it up on Windows
+
+```powershell
+.venv\Scripts\pip install -e '.[vision]'
+.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+**On Windows this prints `False` the first time, every time.** PyPI's default `torch`
+wheel for Windows is CPU-only — unlike Linux, where it bundles CUDA. Nothing is broken;
+the GPU build has to be asked for by name:
+
+```powershell
+.venv\Scripts\pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu126
+```
+
+Two constraints decide which index, and getting either wrong wastes a 2 GB download:
+
+**Your Python version must have wheels there.** Measured 2026-08-23, Windows:
+
+| Index | CUDA | Python versions with wheels |
+|---|---|---|
+| `cu121` | 12.1 | 3.8 – 3.12 |
+| `cu124` | 12.4 | 3.8 – 3.13 |
+| `cu126` | 12.6 | 3.9 – **3.14** |
+| `cu128` | 12.8 | 3.9 – **3.14** |
+| `cu130` | 13.0 | 3.10 – 3.14 |
+
+The founder's machine runs **Python 3.14**, so `cu121` and `cu124` have nothing to
+install and pip fails with "no matching distribution" — which reads like a broken command
+rather than a version mismatch, so it is written down here.
+
+**Your driver must support that CUDA major version.** Driver 531.79 is a CUDA 12.1
+driver. CUDA *minor* version compatibility means it runs any 12.x build, so `cu126` and
+`cu128` are fine; **`cu130` is CUDA 13 and will not work** without a much newer driver.
+
+### The configuration that actually works (verified 2026-08-23)
+
+Not inferred — run on the founder's machine, GTX 1660 Ti, driver 531.79, Python 3.14:
+
+```powershell
+.venv\Scripts\pip install --force-reinstall torch==2.13.0+cu126 torchvision --index-url https://download.pytorch.org/whl/cu126
+```
+
+```
+version: 2.13.0+cu126
+cuda build: 12.6
+available: True
+devices: 1
+```
+
+**Pin the version explicitly.** An unpinned `torch torchvision` against the same index
+left `2.13.0+cpu` in place; naming `torch==2.13.0+cu126` is what replaced it. The download
+is 2.6 GB and takes a few minutes.
+
+**And the driver did not need updating.** CUDA minor-version compatibility genuinely
+holds here: a 12.1 driver runs a 12.6 build. That was a hopeful claim before someone
+tried it, and it is a measured one now. Updating the driver remains the right move if
+anything misbehaves — Turing is still supported and it is free — but it is not a
+prerequisite.
+
+Verify after installing. `torch.cuda.is_available()` must print `True` before any
+training run, because torch will otherwise fall back to CPU silently and the only symptom
+is an epoch that takes an hour:
+
+```powershell
+.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+### Batch size on 6 GB
+
+The command further down this page (`--batch-size 8 --max-size 640`) was written for a
+P100 with 16 GB and **will likely run out of memory on 6 GB.** Start here instead:
+
+```powershell
+.venv\Scripts\python ml\training\train.py --dataset data\datasets\rdd2022_japan `
+    --epochs 30 --batch-size 4 --max-size 640 --device cuda
+```
+
+If that OOMs, drop to `--max-size 512` before dropping the batch size: resolution costs
+memory quadratically and small road damage is exactly what disappears first when you
+shrink the image. If it fits comfortably, `--batch-size 6` is worth trying.
+
+**These are starting numbers, not measurements** — the same status as the map-matching
+thresholds. Replace them with what actually fits, and record it here.
 
 The training script checkpoints **every epoch** and resumes automatically, because
 free sessions are evicted without warning. That is not defensive coding for its own

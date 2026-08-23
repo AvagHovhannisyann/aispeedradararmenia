@@ -60,12 +60,32 @@ finish setting up (~2 minutes — it installs everything for you), then in its t
 That runs the whole chain: tests, generate a synthetic drive, validate, process,
 export.
 
-### Or locally
+### Or locally — macOS / Linux
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 ./scripts/demo.sh
+```
+
+### Or locally — Windows (PowerShell)
+
+A Windows virtualenv puts its executables in `Scripts\`, not `bin/`. That single
+difference is what every command copied from a POSIX README trips over, so the Windows
+form is written out rather than left as an exercise:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -e '.[dev]'
+.\scripts\demo.ps1
+```
+
+Thereafter `.venv\Scripts\roadeye` and `.venv\Scripts\python` stand in for the
+`.venv/bin/...` commands used elsewhere in these docs. If PowerShell refuses to run the
+script at all, it is the execution policy rather than anything in this repository:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 ### Then see it on a map

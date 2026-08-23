@@ -114,6 +114,52 @@ pseudo-labelling only** until BLOCKING-1 is resolved.
 2. Retain their answer in `docs/legal/` as evidence.
 3. Have counsel review before any commercial distribution of an RDD2022-derived model.
 
+#### The email, ready to send
+
+Drafted here rather than left as a to-do, because "email the authors" has sat unactioned
+since M0 and the cost of asking is one message. Addresses are on the CRDDC'2022 paper and
+the sekilab repository; send to the corresponding author and cc the repository maintainer.
+
+> **Subject:** RDD2022 licence — Figshare record and repository README differ (CC BY 4.0 vs CC BY-SA 4.0)
+>
+> Dear Dr Arya and Prof. Sekimoto,
+>
+> Thank you for releasing RDD2022 — it is the most useful public road-damage dataset we
+> have found, and the CRDDC'2022 effort behind it is much appreciated.
+>
+> I am building a road-inspection system for municipalities in Armenia, and while
+> preparing a licence audit before any training run I found two published statements
+> about the dataset's licence that appear to differ:
+>
+> - The Figshare DOI record (10.6084/m9.figshare.21431547) reports the licence as
+>   **CC BY 4.0**.
+> - The README in github.com/sekilab/RoadDamageDetector states the images are available
+>   under **CC BY-SA 4.0**.
+>
+> I would be grateful if you could confirm two things in writing:
+>
+> 1. **Which licence governs the images** — CC BY 4.0 or CC BY-SA 4.0?
+> 2. **Do you consider the weights of a model trained on RDD2022 to be Adapted Material**
+>    under that licence? Under the ShareAlike reading this would determine whether such
+>    weights may be distributed under a proprietary licence, and I would rather establish
+>    that before training than after.
+>
+> I am asking because we intend to respect whichever answer applies. Until we hear from
+> you we are treating the stricter reading (CC BY-SA 4.0) as governing, and any model with
+> RDD2022 in its lineage is marked non-distributable in our system and used only for
+> internal evaluation. RDD2022 would be cited as you request in all cases.
+>
+> If it is easier, a one-line reply on question 1 alone would already be a great help.
+>
+> With thanks and best regards,
+> [name]
+> [role, organisation, Yerevan, Armenia]
+
+Two notes on the framing, both deliberate. It states plainly what we do while waiting, so
+the question does not read as an attempt to extract permission. And it offers an easy exit
+on question 1 alone, because an unanswered email is the most likely outcome and a partial
+answer still resolves most of the risk.
+
 ### Mitigation that removes the risk entirely
 
 The strategic answer is the one the business wants anyway: **the shipping model should

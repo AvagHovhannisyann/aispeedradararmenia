@@ -26,14 +26,40 @@ elif command -v roadeye >/dev/null 2>&1; then
 else
     echo "RoadEye is not installed yet. Run:"
     echo "    python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
+    echo
+    echo "On Windows, executables live in Scripts\\ rather than bin/, and this script"
+    echo "does not run at all — use scripts/demo.ps1:"
+    echo "    python -m venv .venv"
+    echo "    .venv\\Scripts\\pip install -e '.[dev]'"
+    echo "    .\\scripts\\demo.ps1"
     exit 1
 fi
 
 OUT="${1:-demo_output}"
+MARKER=".roadeye-demo"
 rule() { printf '\n\033[1m%s\033[0m\n' "── $1 ─────────────────────────────────────────"; }
 
-rm -rf "$OUT"
+# This script wipes its output directory so each run starts clean, and it takes that
+# directory as an argument. Those two facts together mean `demo.sh ~/Documents` would
+# recursively delete Documents — so a directory is only ever deleted if a previous run
+# left its marker in it. Anything else, including a directory that merely happens to be
+# named demo_output, is refused rather than assumed to be ours.
+if [ -e "$OUT" ]; then
+    if [ ! -f "$OUT/$MARKER" ]; then
+        echo "Refusing to touch '$OUT': it exists and this script did not create it." >&2
+        echo "" >&2
+        echo "This script deletes its output directory before each run. It will only do" >&2
+        echo "that to a directory containing its own $MARKER file." >&2
+        echo "" >&2
+        echo "If this is a demo_output from before this check existed, deleting it is" >&2
+        echo "safe — everything in it is regenerated. Otherwise pick a different path." >&2
+        exit 1
+    fi
+    rm -rf "$OUT"
+fi
 mkdir -p "$OUT"
+echo "Created by scripts/demo.sh. Its presence lets the next run delete this directory." \
+    > "$OUT/$MARKER"
 
 rule "1/6  Run the test suite"
 $PY -m pytest -q
