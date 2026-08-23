@@ -395,6 +395,10 @@ class ProcessingRun(_Base):
     frames_sampled: int = 0
     frames_rejected_quality: int = 0
     detections: int = 0
+    #: Detections the road region discarded. Counted, never silent: a filter that
+    #: quietly deletes is indistinguishable from a detector that found nothing, and the
+    #: number is how anyone notices the region is cropped too tight.
+    detections_outside_road: int = 0
     tracks: int = 0
     defects: int = 0
     errors: list[str] = Field(default_factory=list)

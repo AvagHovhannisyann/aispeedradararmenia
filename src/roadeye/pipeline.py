@@ -48,6 +48,7 @@ from roadeye.video.decoder import (
 )
 from roadeye.video.sampling import SamplingConfig, build_sampling_plan
 from roadeye.vision.base import RoadDamageDetector
+from roadeye.vision.road_region import RoadRegion
 
 
 @dataclass
@@ -65,6 +66,13 @@ class PipelineConfig:
     quality: QualityConfig = field(default_factory=QualityConfig)
     #: Detections below this are discarded before tracking.
     min_detection_confidence: float = 0.25
+    #: Where in the frame a detection may be, for a rigidly mounted camera. ``None``
+    #: analyses the whole frame.
+    #:
+    #: Off by default on purpose. The right trapezoid depends on where the phone sits,
+    #: and no phone has been mounted yet — filtering on guessed geometry would delete
+    #: real defects and call it precision. Measure it on the first drive, then set it.
+    road_region: RoadRegion | None = None
     #: Drop GPS fixes worse than this during ingest.
     max_gps_accuracy_m: float = 25.0
     #: Analyse frames the quality gate marked DEGRADED (flagged, not silently trusted).
@@ -85,6 +93,7 @@ class PipelineConfig:
             "clustering": self.clustering.as_dict(),
             "quality": self.quality.as_dict(),
             "min_detection_confidence": self.min_detection_confidence,
+            "road_region": self.road_region.as_dict() if self.road_region else None,
             "max_gps_accuracy_m": self.max_gps_accuracy_m,
             "analyse_degraded_frames": self.analyse_degraded_frames,
             "evidence_dir": str(self.evidence_dir) if self.evidence_dir else None,
@@ -242,6 +251,16 @@ def process_bundle(
         frame_detections: list[Detection] = []
         for raw in detector.predict(image):
             if raw.confidence < cfg.min_detection_confidence:
+                continue
+            # Geometry before identity: a crack-shaped shadow on a wall is a real
+            # detection of a thing that is not on the road. Counted, not dropped
+            # silently — see ProcessingRun.detections_outside_road.
+            # image.width, not frame.width: the detection's coordinates are in the space
+            # of the image the detector was handed, and Frame's dimensions are optional.
+            if cfg.road_region is not None and not cfg.road_region.accepts(
+                raw.x1, raw.y1, raw.x2, raw.y2, image.width, image.height
+            ):
+                run.detections_outside_road += 1
                 continue
             det_counter += 1
             frame_detections.append(
